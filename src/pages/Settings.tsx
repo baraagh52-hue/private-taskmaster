@@ -1,5 +1,4 @@
 import { motion } from "framer-motion";
-import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,20 +20,14 @@ import {
   Volume2
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { toast } from "sonner";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 
 export default function Settings() {
-  const { user } = useAuth();
+  const user = true as const; // single-user mode: always "signed in"
   const navigate = useNavigate();
   
-  // Get current user preferences
-  const userPreferences = useQuery(api.users.currentUser);
-  const updateUserPreferences = useMutation(api.users.updateUserPreferences);
-  
-  // Microsoft To-Do Settings
+  // Single-user mode: preferences will be stored locally
   const [microsoftClientId, setMicrosoftClientId] = useState("");
   const [microsoftClientSecret, setMicrosoftClientSecret] = useState("");
   const [microsoftTenantId, setMicrosoftTenantId] = useState("");
@@ -66,20 +59,25 @@ export default function Settings() {
   
   const [saving, setSaving] = useState(false);
 
-  // Load existing preferences
+  // Load existing preferences from localStorage (single-user mode)
   useEffect(() => {
-    if (userPreferences) {
-      setTimezone(userPreferences.timezone || "UTC");
-      setPreferredVoice(userPreferences.preferredVoice || "");
-      setSpeechRate(userPreferences.speechRate || 1);
-      setSpeechPitch(userPreferences.speechPitch || 1);
-      setSpeechVolume(userPreferences.speechVolume || 0.8);
-      setPrayerRemindersEnabled(userPreferences.prayerRemindersEnabled ?? true);
-      if (userPreferences.prayerTimes) {
-        setPrayerTimes(userPreferences.prayerTimes);
-      }
-    }
-  }, [userPreferences]);
+    try {
+      const raw = localStorage.getItem("singleUserSettings");
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      setTimezone(s.timezone ?? "UTC");
+      setPreferredVoice(s.preferredVoice ?? "");
+      setSpeechRate(typeof s.speechRate === "number" ? s.speechRate : 1);
+      setSpeechPitch(typeof s.speechPitch === "number" ? s.speechPitch : 1);
+      setSpeechVolume(typeof s.speechVolume === "number" ? s.speechVolume : 0.8);
+      setPrayerRemindersEnabled(s.prayerRemindersEnabled ?? true);
+      if (Array.isArray(s.prayerTimes)) setPrayerTimes(s.prayerTimes);
+
+      setMicrosoftClientId(s.microsoftClientId ?? "");
+      setMicrosoftClientSecret(s.microsoftClientSecret ?? "");
+      setMicrosoftTenantId(s.microsoftTenantId ?? "");
+    } catch {}
+  }, []);
 
   // Get user's current location
   const getCurrentLocation = () => {
@@ -100,14 +98,9 @@ export default function Settings() {
   };
 
   const handleSaveSettings = async () => {
-    if (!user) {
-      toast.error("Please sign in to save settings");
-      return;
-    }
-
     setSaving(true);
     try {
-      await updateUserPreferences({
+      const data = {
         timezone,
         preferredVoice,
         speechRate,
@@ -115,15 +108,14 @@ export default function Settings() {
         speechVolume,
         prayerRemindersEnabled,
         prayerTimes,
-        // Store Microsoft credentials (in production, these should be encrypted)
-        microsoftClientId: microsoftClientId || undefined,
-        microsoftClientSecret: microsoftClientSecret || undefined,
-        microsoftTenantId: microsoftTenantId || undefined,
-      });
-      
-      toast.success("Settings saved successfully!");
+        microsoftClientId,
+        microsoftClientSecret,
+        microsoftTenantId,
+      };
+      localStorage.setItem("singleUserSettings", JSON.stringify(data));
+      toast.success("Settings saved!");
     } catch (error) {
-      toast.error("Failed to save settings");
+      toast.error("Failed to save settings locally");
     } finally {
       setSaving(false);
     }
@@ -135,18 +127,8 @@ export default function Settings() {
     ));
   };
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <div className="text-center">
-          <SettingsIcon className="w-16 h-16 text-[#00ff88] mx-auto mb-4" />
-          <p className="text-white text-xl mb-4">Please sign in to access settings</p>
-          <Button onClick={() => navigate("/auth")} className="bg-[#00ff88] text-black">
-            Sign In
-          </Button>
-        </div>
-      </div>
-    );
+  if (false) {
+    return null;
   }
 
   return (
