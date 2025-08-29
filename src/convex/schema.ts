@@ -30,11 +30,12 @@ export const sessionStatusValidator = v.union(
   v.literal(SESSION_STATUS.ABANDONED),
 );
 
-export const checkinResponseValidator = v.object({
-  text: v.string(),
-  status: v.optional(v.string()),
-  // extend later as needed
-});
+export const checkinResponseValidator = v.union(
+  v.literal("progress"),
+  v.literal("stuck"),
+  v.literal("done"),
+  v.literal("other"),
+);
 
 const schema = defineSchema(
   {
