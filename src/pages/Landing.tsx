@@ -10,6 +10,9 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
 
+// Add type for local guest prayer check-ins
+type LocalCheckins = Record<string, Record<string, { status: "completed" | "missed"; actualTime?: number }>>;
+
 export default function Landing() {
   const demoText = "Welcome to your AI Accountability Assistant! I'm here to help you stay focused, track your goals, and maintain productive habits. Let's work together to achieve your objectives.";
 
@@ -28,6 +31,16 @@ export default function Landing() {
   const [nextPrayer, setNextPrayer] = useState<{ name: string; time: string; targetTs: number; isTomorrow: boolean } | null>(null);
   const [countdown, setCountdown] = useState<string>("");
 
+  // Add local guest check-ins store
+  const [localCheckins, setLocalCheckins] = useState<LocalCheckins>({});
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("localPrayerCheckins");
+      if (saved) setLocalCheckins(JSON.parse(saved));
+    } catch {}
+  }, []);
+
   const timeToMinutes = (t: string) => {
     const [h, m] = t.split(":").map(Number);
     return h * 60 + m;
@@ -39,7 +52,7 @@ export default function Landing() {
     return d;
   };
 
-  // Compute next prayer based on today's status or defaults
+  // Compute next prayer based on today's status or defaults (merge local guest check-ins)
   useEffect(() => {
     const now = new Date();
     const currentMins = now.getHours() * 60 + now.getMinutes();
@@ -49,7 +62,13 @@ export default function Landing() {
         ? todaysPrayerStatus
         : (prayerPreferences?.prayerTimes ?? DEFAULT_PRAYER_TIMES).map((p: any) => ({ ...p, status: "pending" }))) as Array<any>;
 
-    const enabledSorted = [...source].filter((p) => p.enabled !== false).sort((a, b) => a.time.localeCompare(b.time));
+    const todayKey = new Date().toISOString().split("T")[0];
+    const mergedSource = source.map((p: any) => {
+      const local = localCheckins[todayKey]?.[p.name];
+      return local ? { ...p, status: local.status, actualTime: local.actualTime } : p;
+    });
+
+    const enabledSorted = [...mergedSource].filter((p) => p.enabled !== false).sort((a, b) => a.time.localeCompare(b.time));
 
     // Find first pending in the future
     let upcoming: any = enabledSorted.find((p) => (p.status ? p.status === "pending" : true) && timeToMinutes(p.time) > currentMins);
@@ -69,56 +88,71 @@ export default function Landing() {
     }
 
     setNextPrayer({ name: upcoming.name, time: upcoming.time, targetTs, isTomorrow });
-  }, [prayerPreferences, todaysPrayerStatus]);
+  }, [prayerPreferences, todaysPrayerStatus, localCheckins]);
 
-  // Update the live countdown
-  useEffect(() => {
-    if (!nextPrayer) return;
-    const update = () => {
-      const msLeft = nextPrayer.targetTs - Date.now();
-      if (msLeft <= 0) {
-        setCountdown("Now");
-        return;
-      }
-      const totalSec = Math.floor(msLeft / 1000);
-      const h = Math.floor(totalSec / 3600);
-      const m = Math.floor((totalSec % 3600) / 60);
-      const s = totalSec % 60;
-      setCountdown(h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`);
-    };
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [nextPrayer]);
-
-  const sortedTodaysPrayers =
+  // Replace sortedTodaysPrayers to merge local statuses
+  const basePrayers =
     (todaysPrayerStatus && todaysPrayerStatus.length > 0
       ? todaysPrayerStatus
-      : (prayerPreferences?.prayerTimes ?? DEFAULT_PRAYER_TIMES).map((p: any) => ({ ...p, status: "pending" })))?.sort(
-      (a: any, b: any) => a.time.localeCompare(b.time)
-    );
+      : (prayerPreferences?.prayerTimes ?? DEFAULT_PRAYER_TIMES).map((p: any) => ({ ...p, status: "pending" })));
+  const todayKey = new Date().toISOString().split("T")[0];
+  const mergedPrayers = (basePrayers || []).map((prayer: any) => {
+    const local = localCheckins[todayKey]?.[prayer.name];
+    return local ? { ...prayer, status: local.status, actualTime: local.actualTime } : prayer;
+  });
+  const sortedTodaysPrayers = mergedPrayers?.sort(
+    (a: any, b: any) => a.time.localeCompare(b.time)
+  );
 
   const user = useQuery(api.users.currentUser);
   const recordPrayerCheckin = useMutation(api.prayers.recordPrayerCheckin);
 
+  // Update: allow guest check-ins via localStorage (no sign-in needed)
   const handlePrayerCheckin = async (
     prayerName: string,
     scheduledTime: string,
     status: "completed" | "missed"
   ) => {
-    if (!user) {
-      toast("Please sign in to track prayers");
+    // Authenticated path -> store on backend
+    if (user) {
+      try {
+        await recordPrayerCheckin({ prayerName, scheduledTime, status });
+        if (status === "completed") {
+          toast.success(`🤲 ${prayerName} prayer recorded! Barakallahu feeki`);
+        } else {
+          toast(`${prayerName} prayer marked as missed. Allah is Most Forgiving 💚`);
+        }
+      } catch {
+        toast.error("Failed to record prayer");
+      }
       return;
     }
+
+    // Guest path -> store locally
     try {
-      await recordPrayerCheckin({ prayerName, scheduledTime, status });
+      const today = new Date().toISOString().split("T")[0];
+      setLocalCheckins((prev: LocalCheckins) => {
+        const updatedForDay = {
+          ...(prev[today] || {}),
+          [prayerName]: {
+            status,
+            actualTime: status === "completed" ? Date.now() : undefined,
+          },
+        };
+        const updated = { ...prev, [today]: updatedForDay };
+        try {
+          localStorage.setItem("localPrayerCheckins", JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+
       if (status === "completed") {
-        toast.success(`🤲 ${prayerName} prayer recorded! Barakallahu feeki`);
+        toast.success(`🤲 ${prayerName} prayer recorded locally!`);
       } else {
-        toast(`${prayerName} prayer marked as missed. Allah is Most Forgiving 💚`);
+        toast(`${prayerName} prayer marked as missed locally.`);
       }
     } catch {
-      toast.error("Failed to record prayer");
+      toast.error("Failed to record prayer locally");
     }
   };
 
@@ -137,17 +171,23 @@ export default function Landing() {
     } catch {}
   };
 
+  // Update buttons to stay on single page (no navigation)
   const handleGoalTrackingClick = () => {
-    navigate("/dashboard");
+    const el = document.getElementById("tts-demo");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+    toast("Goal tracking will live here on this single page.");
   };
 
   const handleSmartInsightsClick = () => {
-    navigate("/dashboard");
+    const el = document.getElementById("tts-demo");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+    toast("Smart insights will be shown here on this single page.");
   };
 
   const handleGetStarted = () => {
-    if (user) navigate("/dashboard");
-    else navigate("/auth");
+    const el = document.getElementById("prayers") || document.getElementById("tts-demo");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+    else toast("Scroll down to explore the features on this page.");
   };
 
   return (
@@ -257,6 +297,7 @@ export default function Landing() {
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.5 }}
             className="max-w-3xl mx-auto w-full px-4"
+            id="prayers"
           >
             <Card className="bg-gradient-to-r from-[#ff0080]/10 to-[#00ff88]/10 border-[#00ff88]/30">
               <CardHeader>
@@ -296,7 +337,7 @@ export default function Landing() {
                       <div className="text-sm font-medium text-white">{prayer.name}</div>
                       <div className="text-xs text-gray-400 mb-2">{prayer.time}</div>
                       <div className="flex justify-center space-x-1">
-                        {prayer.status === "pending" && prayer.enabled && user && (
+                        {prayer.status === "pending" && prayer.enabled && (
                           <>
                             <Button
                               size="sm"
@@ -319,9 +360,6 @@ export default function Landing() {
                               <X className="w-3 h-3" />
                             </Button>
                           </>
-                        )}
-                        {!user && prayer.status === "pending" && prayer.enabled && (
-                          <span className="text-[10px] text-gray-400">Sign in to track</span>
                         )}
                         {prayer.status === "completed" && (
                           <Check className="w-4 h-4 text-[#00ff88]" />
