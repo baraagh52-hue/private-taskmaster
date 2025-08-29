@@ -111,7 +111,16 @@ export default function Settings() {
           setLatitude(lat.toString());
           setLongitude(lng.toString());
           toast.success("Location detected!");
-          
+
+          // Persist detected location immediately to localStorage (single-user mode)
+          try {
+            const raw = localStorage.getItem("singleUserSettings");
+            const s = raw ? JSON.parse(raw) : {};
+            s.latitude = lat.toString();
+            s.longitude = lng.toString();
+            localStorage.setItem("singleUserSettings", JSON.stringify(s));
+          } catch {}
+
           if (autoCalculatePrayerTimes) {
             await calculatePrayerTimesForLocation(lat, lng);
           }
@@ -145,6 +154,19 @@ export default function Settings() {
       
       if (result.success) {
         setPrayerTimes(result.prayerTimes);
+        // Also persist calculated prayer times (and coords/timezone) to localStorage
+        try {
+          const raw = localStorage.getItem("singleUserSettings");
+          const s = raw ? JSON.parse(raw) : {};
+          s.prayerTimes = result.prayerTimes;
+          s.latitude = latNum.toString();
+          s.longitude = lngNum.toString();
+          if (result.timezone) {
+            s.timezone = result.timezone;
+            setTimezone(result.timezone);
+          }
+          localStorage.setItem("singleUserSettings", JSON.stringify(s));
+        } catch {}
         toast.success("Prayer times calculated automatically!");
       } else {
         toast.error("Failed to calculate prayer times: " + result.error);

@@ -26,6 +26,19 @@ export default function Landing() {
     { name: "Isha", time: "19:30", enabled: true },
   ];
 
+  // Load local (single-user) prayer times fallback
+  const [localPrayerTimes, setLocalPrayerTimes] = useState<Array<{ name: string; time: string; enabled: boolean }> | null>(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("singleUserSettings");
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (Array.isArray(s.prayerTimes)) {
+        setLocalPrayerTimes(s.prayerTimes);
+      }
+    } catch {}
+  }, []);
+
   const [nextPrayer, setNextPrayer] = useState<{ name: string; time: string; targetTs: number; isTomorrow: boolean } | null>(null);
   const [countdown, setCountdown] = useState<string>("");
 
@@ -121,11 +134,11 @@ export default function Landing() {
     const source =
       (todaysPrayerStatus && todaysPrayerStatus.length > 0
         ? todaysPrayerStatus
-        : (prayerPreferences?.prayerTimes ?? DEFAULT_PRAYER_TIMES).map((p: any) => ({ ...p, status: "pending" }))) as Array<any>;
+        : ((prayerPreferences?.prayerTimes ?? localPrayerTimes ?? DEFAULT_PRAYER_TIMES) as Array<any>)).map((p: any) => ({ ...p, status: p.status ?? "pending" }));
 
     const todayKey = new Date().toISOString().split("T")[0];
     const mergedSource = source.map((p: any) => {
-      const local = localCheckins[todayKey]?.[p.name];
+      const local = (localCheckins as any)[todayKey]?.[p.name];
       return local ? { ...p, status: local.status, actualTime: local.actualTime } : p;
     });
 
@@ -149,16 +162,16 @@ export default function Landing() {
     }
 
     setNextPrayer({ name: upcoming.name, time: upcoming.time, targetTs, isTomorrow });
-  }, [prayerPreferences, todaysPrayerStatus, localCheckins]);
+  }, [prayerPreferences, todaysPrayerStatus, localCheckins, localPrayerTimes]);
 
   // Replace sortedTodaysPrayers to merge local statuses
   const basePrayers =
     (todaysPrayerStatus && todaysPrayerStatus.length > 0
       ? todaysPrayerStatus
-      : (prayerPreferences?.prayerTimes ?? DEFAULT_PRAYER_TIMES).map((p: any) => ({ ...p, status: "pending" })));
+      : ((prayerPreferences?.prayerTimes ?? localPrayerTimes ?? DEFAULT_PRAYER_TIMES) as Array<any>).map((p: any) => ({ ...p, status: "pending" })));
   const todayKey = new Date().toISOString().split("T")[0];
   const mergedPrayers = (basePrayers || []).map((prayer: any) => {
-    const local = localCheckins[todayKey]?.[prayer.name];
+    const local = (localCheckins as any)[todayKey]?.[prayer.name];
     return local ? { ...prayer, status: local.status, actualTime: local.actualTime } : prayer;
   });
   const sortedTodaysPrayers = mergedPrayers?.sort(
