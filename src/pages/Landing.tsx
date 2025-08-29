@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
+import { useNavigate } from "react-router";
 
 export default function Landing() {
   const demoText = "Welcome to your AI Accountability Assistant! I'm here to help you stay focused, track your goals, and maintain productive habits. Let's work together to achieve your objectives.";
@@ -121,6 +122,34 @@ export default function Landing() {
     }
   };
 
+  const navigate = useNavigate();
+
+  const handleVoiceInteractionClick = () => {
+    const el = document.getElementById("tts-demo");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+    try {
+      if ("speechSynthesis" in window) {
+        const u = new SpeechSynthesisUtterance(demoText);
+        u.rate = 0.95;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(u);
+      }
+    } catch {}
+  };
+
+  const handleGoalTrackingClick = () => {
+    navigate("/dashboard");
+  };
+
+  const handleSmartInsightsClick = () => {
+    navigate("/dashboard");
+  };
+
+  const handleGetStarted = () => {
+    if (user) navigate("/dashboard");
+    else navigate("/auth");
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -181,6 +210,9 @@ export default function Landing() {
                 <p className="text-sm text-muted-foreground">
                   Communicate naturally with your AI assistant using text-to-speech technology.
                 </p>
+                <Button size="sm" variant="outline" className="mt-3" onClick={handleVoiceInteractionClick}>
+                  Try voice
+                </Button>
               </CardContent>
             </Card>
 
@@ -195,6 +227,9 @@ export default function Landing() {
                 <p className="text-sm text-muted-foreground">
                   Set, monitor, and achieve your personal and professional objectives.
                 </p>
+                <Button size="sm" variant="outline" className="mt-3" onClick={handleGoalTrackingClick}>
+                  Explore goals
+                </Button>
               </CardContent>
             </Card>
 
@@ -209,6 +244,9 @@ export default function Landing() {
                 <p className="text-sm text-muted-foreground">
                   Get personalized recommendations and insights to improve your productivity.
                 </p>
+                <Button size="sm" variant="outline" className="mt-3" onClick={handleSmartInsightsClick}>
+                  See insights
+                </Button>
               </CardContent>
             </Card>
           </motion.div>
@@ -304,6 +342,7 @@ export default function Landing() {
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.6 }}
+            id="tts-demo"
             className="max-w-2xl mx-auto"
           >
             <Card className="border-primary/20">
@@ -329,7 +368,7 @@ export default function Landing() {
             transition={{ delay: 0.8 }}
             className="space-y-4"
           >
-            <Button size="lg" className="px-8 py-3 text-lg">
+            <Button size="lg" className="px-8 py-3 text-lg" onClick={handleGetStarted}>
               Get Started
             </Button>
             <p className="text-xs text-muted-foreground">
