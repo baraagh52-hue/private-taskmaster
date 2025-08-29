@@ -18,6 +18,35 @@ const ConvexAuthProviderAny = ConvexAuthProvider as any;
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
+// Add an in-memory storage adapter to avoid localStorage usage
+const memoryStorage = {
+  getItem(key: string) {
+    try {
+      const store = (window as any).__VLY_MEM_STORE__ || {};
+      return key in store ? store[key] : null;
+    } catch {
+      return null;
+    }
+  },
+  setItem(key: string, value: string) {
+    try {
+      const w = window as any;
+      w.__VLY_MEM_STORE__ = w.__VLY_MEM_STORE__ || {};
+      w.__VLY_MEM_STORE__[key] = value;
+    } catch {
+      // swallow
+    }
+  },
+  removeItem(key: string) {
+    try {
+      const w = window as any;
+      if (w.__VLY_MEM_STORE__) delete w.__VLY_MEM_STORE__[key];
+    } catch {
+      // swallow
+    }
+  },
+};
+
 function RouteSyncer() {
   const location = useLocation();
   useEffect(() => {
@@ -61,7 +90,7 @@ function RootProviders() {
   return (
     <InstrumentationProvider>
       {/* Use memory storage to avoid localStorage in restricted environments */}
-      <ConvexAuthProviderAny client={convex} storage="memory">
+      <ConvexAuthProviderAny client={convex} storage={memoryStorage}>
         <AppRouter />
       </ConvexAuthProviderAny>
       <Toaster />
