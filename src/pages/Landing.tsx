@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Loader, Mic, Volume2, Brain, Moon, Clock, Check, X, Trash2, Settings as SettingsIcon } from "lucide-react";
+import { Loader, Mic, Volume2, Brain, Moon, Clock, Check, X, Trash2, Settings as SettingsIcon, MicIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery, useMutation, useAction } from "convex/react";
@@ -228,8 +228,120 @@ export default function Landing() {
     return d;
   };
 
+  // Add hotword detection state
+  const [hotwordListening, setHotwordListening] = useState(false);
+  const [hotwordDetected, setHotwordDetected] = useState(false);
+  const hotwordRecognitionRef = useRef<any>(null);
+
+  // Load hotword settings from localStorage
+  const [hotwordSettings, setHotwordSettings] = useState({
+    enabled: true,
+    hotword: "assistant",
+    sensitivity: 0.8,
+  });
+
+  // Load settings on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("singleUserSettings");
+      if (saved) {
+        const settings = JSON.parse(saved);
+        setHotwordSettings({
+          enabled: settings.hotwordEnabled ?? true,
+          hotword: settings.hotword ?? "assistant",
+          sensitivity: settings.hotwordSensitivity ?? 0.8,
+        });
+      }
+    } catch {}
+  }, []);
+
+  // Initialize hotword listening on mount
+  useEffect(() => {
+    if (hotwordSettings.enabled && sttSupported) {
+      startHotwordListening();
+    }
+    return () => {
+      stopHotwordListening();
+    };
+  }, [hotwordSettings.enabled, sttSupported]);
+
+  const startHotwordListening = () => {
+    if (!sttSupported || hotwordListening) return;
+    
+    try {
+      const Rec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const rec = new Rec();
+      hotwordRecognitionRef.current = rec;
+      
+      rec.lang = "en-US";
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
+      
+      rec.onresult = (e: any) => {
+        const transcript = e?.results?.[e.results.length - 1]?.[0]?.transcript?.toLowerCase() || "";
+        
+        // Check if hotword is detected
+        if (transcript.includes(hotwordSettings.hotword.toLowerCase())) {
+          setHotwordDetected(true);
+          toast.success(`Hotword "${hotwordSettings.hotword}" detected! Listening...`);
+          
+          // Stop hotword listening and start regular STT
+          stopHotwordListening();
+          setTimeout(() => {
+            startListening();
+          }, 500);
+          
+          // Reset hotword detection after a delay
+          setTimeout(() => {
+            setHotwordDetected(false);
+            if (hotwordSettings.enabled) {
+              startHotwordListening();
+            }
+          }, 5000);
+        }
+      };
+      
+      rec.onerror = () => {
+        setHotwordListening(false);
+        // Retry hotword listening after error
+        setTimeout(() => {
+          if (hotwordSettings.enabled) {
+            startHotwordListening();
+          }
+        }, 2000);
+      };
+      
+      rec.onend = () => {
+        setHotwordListening(false);
+        // Restart hotword listening if it should be active
+        if (hotwordSettings.enabled && !hotwordDetected) {
+          setTimeout(() => {
+            startHotwordListening();
+          }, 1000);
+        }
+      };
+      
+      rec.start();
+      setHotwordListening(true);
+    } catch {
+      setHotwordListening(false);
+    }
+  };
+
+  const stopHotwordListening = () => {
+    try {
+      hotwordRecognitionRef.current?.stop?.();
+    } catch {}
+    setHotwordListening(false);
+  };
+
   const startListening = () => {
     if (!sttSupported || listening) return;
+    
+    // Stop hotword listening while doing regular STT
+    stopHotwordListening();
+    
     try {
       const Rec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       const rec = new Rec();
@@ -241,13 +353,29 @@ export default function Landing() {
         const transcript = e?.results?.[0]?.[0]?.transcript || "";
         if (transcript) setUserInput(transcript);
       };
-      rec.onerror = () => setListening(false);
-      rec.onend = () => setListening(false);
+      rec.onerror = () => {
+        setListening(false);
+        // Restart hotword listening after STT ends
+        if (hotwordSettings.enabled) {
+          setTimeout(() => startHotwordListening(), 1000);
+        }
+      };
+      rec.onend = () => {
+        setListening(false);
+        // Restart hotword listening after STT ends
+        if (hotwordSettings.enabled) {
+          setTimeout(() => startHotwordListening(), 1000);
+        }
+      };
       rec.start();
       setListening(true);
     } catch {
       setListening(false);
       toast("Microphone is unavailable in this browser.");
+      // Restart hotword listening on error
+      if (hotwordSettings.enabled) {
+        setTimeout(() => startHotwordListening(), 1000);
+      }
     }
   };
 
@@ -256,6 +384,10 @@ export default function Landing() {
       recognitionRef.current?.stop?.();
     } catch {}
     setListening(false);
+    // Restart hotword listening when manual STT stops
+    if (hotwordSettings.enabled) {
+      setTimeout(() => startHotwordListening(), 1000);
+    }
   };
 
   const sendMessage = async () => {
@@ -330,6 +462,29 @@ export default function Landing() {
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
               Your personal AI companion for staying focused, tracking goals, and building productive habits with voice interaction.
             </p>
+
+            {/* Hotword Status Indicator */}
+            {hotwordSettings.enabled && (
+              <div className="flex items-center justify-center gap-2 text-sm">
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${
+                  hotwordDetected 
+                    ? "bg-primary/20 border-primary text-primary" 
+                    : hotwordListening 
+                    ? "bg-blue-500/20 border-blue-500 text-blue-400" 
+                    : "bg-gray-500/20 border-gray-500 text-gray-400"
+                }`}>
+                  <MicIcon className={`w-3 h-3 ${hotwordListening ? "animate-pulse" : ""}`} />
+                  <span>
+                    {hotwordDetected 
+                      ? `"${hotwordSettings.hotword}" detected!` 
+                      : hotwordListening 
+                      ? `Listening for "${hotwordSettings.hotword}"...` 
+                      : "Hotword inactive"
+                    }
+                  </span>
+                </div>
+              </div>
+            )}
           </motion.div>
 
           {/* Prayer Times Section */}
@@ -481,7 +636,7 @@ export default function Landing() {
             </Card>
           </motion.div>
 
-          {/* AI Test Section (replaces previous TTS Demo) */}
+          {/* AI Test Section (updated with hotword info) */}
           <motion.div
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -495,7 +650,10 @@ export default function Landing() {
                   Test AI Assistant
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Mic className={`h-4 w-4 ${listening ? "text-primary animate-pulse" : ""}`} />
-                    {sttSupported ? (listening ? "Listening..." : "Mic Ready") : "STT Unavailable"}
+                    {sttSupported ? (
+                      listening ? "Listening..." : 
+                      hotwordSettings.enabled ? `Say "${hotwordSettings.hotword}" or use mic` : "Mic Ready"
+                    ) : "STT Unavailable"}
                   </div>
                 </CardTitle>
               </CardHeader>
@@ -503,7 +661,10 @@ export default function Landing() {
                 <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
                   {messages.length === 0 ? (
                     <div className="text-xs text-muted-foreground">
-                      Type a message below or tap the mic to dictate, then press Send. Ask for goals, accountability, or prayer-related prompts.
+                      {hotwordSettings.enabled 
+                        ? `Say "${hotwordSettings.hotword}" to activate voice input, or type a message below and press Send. Ask for goals, accountability, or prayer-related prompts.`
+                        : "Type a message below or tap the mic to dictate, then press Send. Ask for goals, accountability, or prayer-related prompts."
+                      }
                     </div>
                   ) : (
                     messages.map((m: { role: "user" | "assistant"; text: string; time: number }, idx: number) => (
@@ -525,7 +686,7 @@ export default function Landing() {
                   <Input
                     value={userInput}
                     onChange={(e) => setUserInput(e.target.value)}
-                    placeholder="Type a message or use the mic..."
+                    placeholder={hotwordSettings.enabled ? `Say "${hotwordSettings.hotword}" or type here...` : "Type a message or use the mic..."}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") sendMessage();
                     }}

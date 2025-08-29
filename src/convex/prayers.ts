@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, action } from "./_generated/server";
 import { getCurrentUser } from "./users";
 
-// Default prayer times (can be customized by user)
+// Default prayer times (fallback if location-based calculation fails)
 const DEFAULT_PRAYER_TIMES = [
   { name: "Fajr", time: "05:30", enabled: true },
   { name: "Dhuhr", time: "12:30", enabled: true },
@@ -10,6 +10,67 @@ const DEFAULT_PRAYER_TIMES = [
   { name: "Maghrib", time: "18:00", enabled: true },
   { name: "Isha", time: "19:30", enabled: true },
 ];
+
+// Calculate prayer times based on location using Aladhan API
+export const calculatePrayerTimes = action({
+  args: {
+    latitude: v.number(),
+    longitude: v.number(),
+    method: v.optional(v.number()), // Calculation method (default: 2 for ISNA)
+  },
+  handler: async (ctx, args) => {
+    try {
+      const { latitude, longitude, method = 2 } = args;
+      const today = new Date();
+      const dateStr = `${today.getDate()}-${today.getMonth() + 1}-${today.getFullYear()}`;
+      
+      const response = await fetch(
+        `http://api.aladhan.com/v1/timings/${dateStr}?latitude=${latitude}&longitude=${longitude}&method=${method}`
+      );
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch prayer times");
+      }
+      
+      const data = await response.json();
+      const timings = data.data.timings;
+      
+      // Convert 24-hour format to HH:MM and create prayer times array
+      const prayerTimes = [
+        { name: "Fajr", time: formatTime(timings.Fajr), enabled: true },
+        { name: "Dhuhr", time: formatTime(timings.Dhuhr), enabled: true },
+        { name: "Asr", time: formatTime(timings.Asr), enabled: true },
+        { name: "Maghrib", time: formatTime(timings.Maghrib), enabled: true },
+        { name: "Isha", time: formatTime(timings.Isha), enabled: true },
+      ];
+      
+      return {
+        success: true,
+        prayerTimes,
+        location: { latitude, longitude },
+        date: dateStr,
+        timezone: data.data.meta.timezone,
+      };
+    } catch (error) {
+      console.error("Prayer time calculation error:", error);
+      // Fix: 'error' is unknown, ensure we convert to string safely
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        error: message,
+        prayerTimes: DEFAULT_PRAYER_TIMES,
+      };
+    }
+  },
+});
+
+// Helper function to format time from API response
+function formatTime(timeString: string): string {
+  // Remove timezone info and convert to HH:MM format
+  const time = timeString.split(' ')[0];
+  const [hours, minutes] = time.split(':');
+  return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+}
 
 // Update user prayer preferences
 export const updatePrayerPreferences = mutation({

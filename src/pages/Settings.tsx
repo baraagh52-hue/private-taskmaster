@@ -17,11 +17,14 @@ import {
   Moon, 
   Key,
   Globe,
-  Volume2
+  Volume2,
+  Zap
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import { useAction } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 export default function Settings() {
   const user = true as const; // single-user mode: always "signed in"
@@ -36,6 +39,13 @@ export default function Settings() {
   const [timezone, setTimezone] = useState("UTC");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
+  const [autoCalculatePrayerTimes, setAutoCalculatePrayerTimes] = useState(true);
+  const [prayerCalculationMethod, setPrayerCalculationMethod] = useState(2); // ISNA method
+  
+  // Hotword Settings
+  const [hotwordEnabled, setHotwordEnabled] = useState(true);
+  const [hotword, setHotword] = useState("assistant");
+  const [hotwordSensitivity, setHotwordSensitivity] = useState(0.8);
   
   // AI Settings
   const [aiModel, setAiModel] = useState("phi3");
@@ -56,8 +66,12 @@ export default function Settings() {
     { name: "Maghrib", time: "18:00", enabled: true },
     { name: "Isha", time: "19:30", enabled: true },
   ]);
-  
+
   const [saving, setSaving] = useState(false);
+  const [calculatingPrayerTimes, setCalculatingPrayerTimes] = useState(false);
+
+  // Add prayer time calculation action
+  const calculatePrayerTimes = useAction(api.prayers.calculatePrayerTimes);
 
   // Load existing preferences from localStorage (single-user mode)
   useEffect(() => {
@@ -66,6 +80,13 @@ export default function Settings() {
       if (!raw) return;
       const s = JSON.parse(raw);
       setTimezone(s.timezone ?? "UTC");
+      setLatitude(s.latitude ?? "");
+      setLongitude(s.longitude ?? "");
+      setAutoCalculatePrayerTimes(s.autoCalculatePrayerTimes ?? true);
+      setPrayerCalculationMethod(s.prayerCalculationMethod ?? 2);
+      setHotwordEnabled(s.hotwordEnabled ?? true);
+      setHotword(s.hotword ?? "assistant");
+      setHotwordSensitivity(s.hotwordSensitivity ?? 0.8);
       setPreferredVoice(s.preferredVoice ?? "");
       setSpeechRate(typeof s.speechRate === "number" ? s.speechRate : 1);
       setSpeechPitch(typeof s.speechPitch === "number" ? s.speechPitch : 1);
@@ -79,14 +100,21 @@ export default function Settings() {
     } catch {}
   }, []);
 
-  // Get user's current location
-  const getCurrentLocation = () => {
+  // Get user's current location and calculate prayer times
+  const getCurrentLocationAndCalculatePrayers = async () => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLatitude(position.coords.latitude.toString());
-          setLongitude(position.coords.longitude.toString());
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          
+          setLatitude(lat.toString());
+          setLongitude(lng.toString());
           toast.success("Location detected!");
+          
+          if (autoCalculatePrayerTimes) {
+            await calculatePrayerTimesForLocation(lat, lng);
+          }
         },
         (error) => {
           toast.error("Failed to get location: " + error.message);
@@ -97,11 +125,49 @@ export default function Settings() {
     }
   };
 
+  // Calculate prayer times for given coordinates
+  const calculatePrayerTimesForLocation = async (lat?: number, lng?: number) => {
+    const latNum = lat || parseFloat(latitude);
+    const lngNum = lng || parseFloat(longitude);
+    
+    if (!latNum || !lngNum) {
+      toast.error("Please set location coordinates first");
+      return;
+    }
+    
+    setCalculatingPrayerTimes(true);
+    try {
+      const result = await calculatePrayerTimes({
+        latitude: latNum,
+        longitude: lngNum,
+        method: prayerCalculationMethod,
+      });
+      
+      if (result.success) {
+        setPrayerTimes(result.prayerTimes);
+        toast.success("Prayer times calculated automatically!");
+      } else {
+        toast.error("Failed to calculate prayer times: " + result.error);
+      }
+    } catch (error) {
+      toast.error("Error calculating prayer times");
+    } finally {
+      setCalculatingPrayerTimes(false);
+    }
+  };
+
   const handleSaveSettings = async () => {
     setSaving(true);
     try {
       const data = {
         timezone,
+        latitude,
+        longitude,
+        autoCalculatePrayerTimes,
+        prayerCalculationMethod,
+        hotwordEnabled,
+        hotword,
+        hotwordSensitivity,
         preferredVoice,
         speechRate,
         speechPitch,
@@ -238,7 +304,7 @@ export default function Settings() {
           </Card>
         </motion.div>
 
-        {/* Location Settings */}
+        {/* Location & Prayer Settings - Combined */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -248,10 +314,11 @@ export default function Settings() {
             <CardHeader>
               <CardTitle className="text-white flex items-center">
                 <MapPin className="w-5 h-5 mr-2 text-[#ff0080]" />
-                Location & Time Settings
+                Location & Prayer Settings
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
+              {/* Location Detection */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="timezone">Timezone</Label>
@@ -277,11 +344,16 @@ export default function Settings() {
                   <Label>Current Location</Label>
                   <Button
                     variant="outline"
-                    onClick={getCurrentLocation}
+                    onClick={getCurrentLocationAndCalculatePrayers}
                     className="w-full border-gray-600"
+                    disabled={calculatingPrayerTimes}
                   >
-                    <Globe className="w-4 h-4 mr-2" />
-                    Detect Location
+                    {calculatingPrayerTimes ? (
+                      <div className="w-4 h-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2" />
+                    ) : (
+                      <Globe className="w-4 h-4 mr-2" />
+                    )}
+                    Detect Location & Calculate Prayers
                   </Button>
                 </div>
               </div>
@@ -309,11 +381,100 @@ export default function Settings() {
                   />
                 </div>
               </div>
+
+              <Separator className="bg-gray-700" />
+
+              {/* Prayer Time Settings */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="autoCalculate">Automatic Prayer Time Calculation</Label>
+                    <p className="text-sm text-gray-400">Calculate prayer times based on your location</p>
+                  </div>
+                  <Switch
+                    id="autoCalculate"
+                    checked={autoCalculatePrayerTimes}
+                    onCheckedChange={setAutoCalculatePrayerTimes}
+                  />
+                </div>
+
+                {autoCalculatePrayerTimes && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="calculationMethod">Calculation Method</Label>
+                      <Select 
+                        value={prayerCalculationMethod.toString()} 
+                        onValueChange={(value) => setPrayerCalculationMethod(parseInt(value))}
+                      >
+                        <SelectTrigger className="bg-black/40 border-gray-700">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">University of Islamic Sciences, Karachi</SelectItem>
+                          <SelectItem value="2">Islamic Society of North America (ISNA)</SelectItem>
+                          <SelectItem value="3">Muslim World League</SelectItem>
+                          <SelectItem value="4">Umm Al-Qura University, Makkah</SelectItem>
+                          <SelectItem value="5">Egyptian General Authority of Survey</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => calculatePrayerTimesForLocation()}
+                      disabled={!latitude || !longitude || calculatingPrayerTimes}
+                      className="border-[#00ff88] text-[#00ff88]"
+                    >
+                      {calculatingPrayerTimes ? (
+                        <div className="w-4 h-4 animate-spin rounded-full border-2 border-current border-t-transparent mr-2" />
+                      ) : (
+                        <Moon className="w-4 h-4 mr-2" />
+                      )}
+                      Recalculate Prayer Times
+                    </Button>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="reminders">Prayer Reminders</Label>
+                    <p className="text-sm text-gray-400">Get notified before prayer times</p>
+                  </div>
+                  <Switch
+                    id="reminders"
+                    checked={prayerRemindersEnabled}
+                    onCheckedChange={setPrayerRemindersEnabled}
+                  />
+                </div>
+                
+                {!autoCalculatePrayerTimes && (
+                  <div className="space-y-3">
+                    <Label>Manual Prayer Times</Label>
+                    {prayerTimes.map((prayer, index) => (
+                      <div key={prayer.name} className="flex items-center justify-between p-3 bg-black/20 rounded-lg">
+                        <div className="flex items-center space-x-3">
+                          <Switch
+                            checked={prayer.enabled}
+                            onCheckedChange={(enabled) => updatePrayerTime(index, 'enabled', enabled)}
+                          />
+                          <span className="text-white font-medium">{prayer.name}</span>
+                        </div>
+                        <Input
+                          type="time"
+                          value={prayer.time}
+                          onChange={(e) => updatePrayerTime(index, 'time', e.target.value)}
+                          className="w-32 bg-black/40 border-gray-700"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Voice Settings */}
+        {/* Hotword & Voice Settings */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -322,11 +483,54 @@ export default function Settings() {
           <Card className="bg-black/40 border-gray-800">
             <CardHeader>
               <CardTitle className="text-white flex items-center">
-                <Volume2 className="w-5 h-5 mr-2 text-[#0088ff]" />
-                Voice & Speech Settings
+                <Zap className="w-5 h-5 mr-2 text-[#0088ff]" />
+                Hotword & Voice Settings
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="hotwordEnabled">Hotword Activation</Label>
+                  <p className="text-sm text-gray-400">Activate voice input with a hotword</p>
+                </div>
+                <Switch
+                  id="hotwordEnabled"
+                  checked={hotwordEnabled}
+                  onCheckedChange={setHotwordEnabled}
+                />
+              </div>
+
+              {hotwordEnabled && (
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="hotword">Hotword/Nickname</Label>
+                    <Input
+                      id="hotword"
+                      placeholder="e.g., assistant, jarvis, alexa"
+                      value={hotword}
+                      onChange={(e) => setHotword(e.target.value)}
+                      className="bg-black/40 border-gray-700"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="sensitivity">Sensitivity: {Math.round(hotwordSensitivity * 100)}%</Label>
+                    <Input
+                      id="sensitivity"
+                      type="range"
+                      min="0.1"
+                      max="1"
+                      step="0.1"
+                      value={hotwordSensitivity}
+                      onChange={(e) => setHotwordSensitivity(parseFloat(e.target.value))}
+                      className="bg-black/40 border-gray-700"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <Separator className="bg-gray-700" />
+              
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="voice">Preferred Voice</Label>
@@ -382,58 +586,6 @@ export default function Settings() {
                     className="bg-black/40 border-gray-700"
                   />
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Prayer Settings */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
-          <Card className="bg-black/40 border-gray-800">
-            <CardHeader>
-              <CardTitle className="text-white flex items-center">
-                <Moon className="w-5 h-5 mr-2 text-[#ff0080]" />
-                Prayer Settings
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="reminders">Prayer Reminders</Label>
-                  <p className="text-sm text-gray-400">Get notified before prayer times</p>
-                </div>
-                <Switch
-                  id="reminders"
-                  checked={prayerRemindersEnabled}
-                  onCheckedChange={setPrayerRemindersEnabled}
-                />
-              </div>
-              
-              <Separator className="bg-gray-700" />
-              
-              <div className="space-y-3">
-                <Label>Prayer Times</Label>
-                {prayerTimes.map((prayer, index) => (
-                  <div key={prayer.name} className="flex items-center justify-between p-3 bg-black/20 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <Switch
-                        checked={prayer.enabled}
-                        onCheckedChange={(enabled) => updatePrayerTime(index, 'enabled', enabled)}
-                      />
-                      <span className="text-white font-medium">{prayer.name}</span>
-                    </div>
-                    <Input
-                      type="time"
-                      value={prayer.time}
-                      onChange={(e) => updatePrayerTime(index, 'time', e.target.value)}
-                      className="w-32 bg-black/40 border-gray-700"
-                    />
-                  </div>
-                ))}
               </div>
             </CardContent>
           </Card>
