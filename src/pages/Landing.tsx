@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Loader, Mic, Volume2, Brain, Moon, Clock, Check, X } from "lucide-react";
+import { Loader, Mic, Volume2, Brain, Moon, Clock, Check, X, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery, useMutation, useAction } from "convex/react";
@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { useEffect, useState, useRef } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type LocalCheckins = Record<string, Record<string, { status: "completed" | "missed"; actualTime?: number }>>;
 
@@ -42,22 +43,44 @@ export default function Landing() {
     typeof window !== "undefined" &&
     (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window));
 
+  // Add local tasks state for To-Do/Goals with localStorage persistence
+  const [tasks, setTasks] = useState<Array<{ id: string; text: string; done: boolean; created: number }>>([]);
+  const [newTask, setNewTask] = useState<string>("");
+
+  // Load tasks from localStorage on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("localPrayerCheckins");
-      if (saved) setLocalCheckins(JSON.parse(saved));
+      const saved = localStorage.getItem("localTasks");
+      if (saved) setTasks(JSON.parse(saved));
     } catch {}
   }, []);
 
-  const timeToMinutes = (t: string) => {
-    const [h, m] = t.split(":").map(Number);
-    return h * 60 + m;
+  // Persist tasks to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem("localTasks", JSON.stringify(tasks));
+    } catch {}
+  }, [tasks]);
+
+  // Handlers for tasks
+  const addTask = () => {
+    const text = newTask.trim();
+    if (!text) return;
+    const id =
+      (typeof crypto !== "undefined" && (crypto as any)?.randomUUID)
+        ? (crypto as any).randomUUID()
+        : Math.random().toString(36).slice(2);
+    setTasks((prev) => [{ id, text, done: false, created: Date.now() }, ...prev]);
+    setNewTask("");
+    toast.success("Task added");
   };
-  const dateWithTime = (base: Date, t: string) => {
-    const [h, m] = t.split(":").map(Number);
-    const d = new Date(base);
-    d.setHours(h, m, 0, 0);
-    return d;
+
+  const toggleTask = (id: string, done: boolean) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done } : t)));
+  };
+
+  const deleteTask = (id: string) => {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
   };
 
   // Compute next prayer based on today's status or defaults (merge local guest check-ins)
@@ -164,9 +187,15 @@ export default function Landing() {
     }
   };
 
-  const scrollToChat = () => {
-    const el = document.getElementById("tts-demo");
-    if (el) el.scrollIntoView({ behavior: "smooth" });
+  const timeToMinutes = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const dateWithTime = (base: Date, t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    const d = new Date(base);
+    d.setHours(h, m, 0, 0);
+    return d;
   };
 
   const startListening = () => {
@@ -219,31 +248,6 @@ export default function Landing() {
     }
   };
 
-  const handleVoiceInteractionClick = () => {
-    scrollToChat();
-    if (sttSupported) {
-      startListening();
-    } else {
-      toast("Speech-to-text is not supported in this browser.");
-    }
-  };
-
-  const handleGoalTrackingClick = () => {
-    scrollToChat();
-    toast("Use the chat to log goals or ask for accountability prompts.");
-  };
-
-  const handleSmartInsightsClick = () => {
-    scrollToChat();
-    toast("Ask the AI for insights or tips in the chat.");
-  };
-
-  const handleGetStarted = () => {
-    const el = document.getElementById("prayers") || document.getElementById("tts-demo");
-    if (el) el.scrollIntoView({ behavior: "smooth" });
-    else toast("Scroll down to explore the features on this page.");
-  };
-
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -284,65 +288,6 @@ export default function Landing() {
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
               Your personal AI companion for staying focused, tracking goals, and building productive habits with voice interaction.
             </p>
-          </motion.div>
-
-          {/* Features Grid */}
-          <motion.div
-            initial={{ y: 50, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="grid md:grid-cols-3 gap-6 max-w-3xl mx-auto"
-          >
-            <Card className="border-2 hover:border-primary/50 transition-colors">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Volume2 className="h-5 w-5 text-primary" />
-                  Voice Interaction
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Communicate naturally with your AI assistant using text-to-speech technology.
-                </p>
-                <Button size="sm" variant="outline" className="mt-3" onClick={handleVoiceInteractionClick}>
-                  Try voice
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="border-2 hover:border-primary/50 transition-colors">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Mic className="h-5 w-5 text-primary" />
-                  Goal Tracking
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Set, monitor, and achieve your personal and professional objectives.
-                </p>
-                <Button size="sm" variant="outline" className="mt-3" onClick={handleGoalTrackingClick}>
-                  Explore goals
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="border-2 hover:border-primary/50 transition-colors">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Brain className="h-5 w-5 text-primary" />
-                  Smart Insights
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Get personalized recommendations and insights to improve your productivity.
-                </p>
-                <Button size="sm" variant="outline" className="mt-3" onClick={handleSmartInsightsClick}>
-                  See insights
-                </Button>
-              </CardContent>
-            </Card>
           </motion.div>
 
           {/* Prayer Times Section */}
@@ -429,6 +374,71 @@ export default function Landing() {
             </Card>
           </motion.div>
 
+          {/* Tasks & Goals Section */}
+          <motion.div
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.55 }}
+            id="todos"
+            className="max-w-3xl mx-auto w-full px-4"
+          >
+            <Card className="bg-gradient-to-r from-[#00ff88]/10 to-[#ff0080]/10 border-[#ff0080]/30">
+              <CardHeader>
+                <CardTitle className="text-white">Your Tasks & Goals</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={newTask}
+                    onChange={(e) => setNewTask(e.target.value)}
+                    placeholder="Add a new task or goal..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") addTask();
+                    }}
+                  />
+                  <Button size="sm" onClick={addTask} disabled={!newTask.trim()}>
+                    Add
+                  </Button>
+                </div>
+
+                {tasks.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">
+                    No tasks yet. Add your first goal above to get started.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {tasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className="flex items-center justify-between p-3 rounded-md border bg-black/20 border-gray-700"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Checkbox
+                            checked={task.done}
+                            onCheckedChange={(checked) => toggleTask(task.id, Boolean(checked))}
+                          />
+                          <div className={`text-sm ${task.done ? "line-through text-gray-400" : "text-white"}`}>
+                            {task.text}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className="h-7 w-7 border-[#ff0080] text-[#ff0080]"
+                            onClick={() => deleteTask(task.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+
           {/* AI Test Section (replaces previous TTS Demo) */}
           <motion.div
             initial={{ y: 50, opacity: 0 }}
@@ -502,21 +512,6 @@ export default function Landing() {
                 </div>
               </CardContent>
             </Card>
-          </motion.div>
-
-          {/* CTA Section */}
-          <motion.div
-            initial={{ y: 50, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.8 }}
-            className="space-y-4"
-          >
-            <Button size="lg" className="px-8 py-3 text-lg" onClick={handleGetStarted}>
-              Get Started
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              No external dependencies • Browser-native TTS • Privacy-focused
-            </p>
           </motion.div>
 
         </div>
