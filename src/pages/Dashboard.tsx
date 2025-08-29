@@ -165,6 +165,83 @@ export default function Dashboard() {
   const [sessionTime, setSessionTime] = useState(0);
   const [lastCheckinTime, setLastCheckinTime] = useState(0);
 
+  // Add next prayer countdown state
+  const [nextPrayer, setNextPrayer] = useState<{ name: string; time: string; targetTs: number; isTomorrow: boolean } | null>(null);
+  const [countdown, setCountdown] = useState<string>("");
+
+  // Helpers for time calculations
+  const timeToMinutes = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const dateWithTime = (base: Date, t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    const d = new Date(base);
+    d.setHours(h, m, 0, 0);
+    return d;
+  };
+
+  // Compute the next prayer (today if any upcoming pending; otherwise tomorrow's first enabled)
+  useEffect(() => {
+    if (!prayerPreferences || !todaysPrayerStatus) return;
+
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
+    const todaysEnabledSorted =
+      [...todaysPrayerStatus]
+        .filter((p: any) => p.enabled)
+        .sort((a: any, b: any) => a.time.localeCompare(b.time));
+
+    let upcoming: any = todaysEnabledSorted.find((p: any) => p.status === "pending" && timeToMinutes(p.time) > currentMins);
+    let targetTs: number;
+    let isTomorrow = false;
+
+    if (upcoming) {
+      targetTs = dateWithTime(now, upcoming.time).getTime();
+    } else {
+      const prefsSorted =
+        [...(prayerPreferences.prayerTimes || [])]
+          .filter((p: any) => p.enabled)
+          .sort((a: any, b: any) => a.time.localeCompare(b.time));
+      const firstTomorrow = prefsSorted[0] || { name: "Fajr", time: "05:30" };
+      const tomorrow = new Date(now);
+      tomorrow.setDate(now.getDate() + 1);
+      targetTs = dateWithTime(tomorrow, firstTomorrow.time).getTime();
+      upcoming = { name: firstTomorrow.name, time: firstTomorrow.time };
+      isTomorrow = true;
+    }
+
+    setNextPrayer({ name: upcoming.name, time: upcoming.time, targetTs, isTomorrow });
+  }, [prayerPreferences, todaysPrayerStatus]);
+
+  // Update the live countdown
+  useEffect(() => {
+    if (!nextPrayer) return;
+
+    const update = () => {
+      const msLeft = nextPrayer.targetTs - Date.now();
+      if (msLeft <= 0) {
+        setCountdown("Now");
+        return;
+      }
+      const totalSec = Math.floor(msLeft / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      setCountdown(h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`);
+    };
+
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [nextPrayer]);
+
+  // Sorted prayers for display
+  const sortedTodaysPrayers = todaysPrayerStatus
+    ? [...todaysPrayerStatus].sort((a: any, b: any) => a.time.localeCompare(b.time))
+    : null;
+
   useEffect(() => {
     if (currentSession?.status === "active") {
       const interval = setInterval(() => {
@@ -426,8 +503,26 @@ export default function Dashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {/* Next Prayer Countdown Box */}
+                {nextPrayer && (
+                  <div className="mb-4 p-4 rounded-lg border bg-black/30 border-[#00ff88]/40 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm text-gray-400">Next Prayer</div>
+                      <div className="text-lg font-semibold text-white">
+                        {nextPrayer.name}{" "}
+                        <span className="text-gray-400">
+                          at {nextPrayer.time}{nextPrayer.isTomorrow ? " (tomorrow)" : ""}
+                        </span>
+                      </div>
+                    </div>
+                    <div className={`text-2xl font-bold ${countdown === "Now" ? "text-[#ff0080]" : "text-[#00ff88]"}`}>
+                      {countdown}
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-5 gap-2">
-                  {todaysPrayerStatus?.map((prayer: any) => (
+                  {(sortedTodaysPrayers || []).map((prayer: any) => (
                     <div
                       key={prayer.name}
                       className={`p-3 rounded-lg border text-center ${
