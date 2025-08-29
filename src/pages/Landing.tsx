@@ -1,12 +1,13 @@
 import { motion } from "framer-motion";
-import { Loader, Mic, Volume2, Brain, Moon, Clock } from "lucide-react";
+import { Loader, Mic, Volume2, Brain, Moon, Clock, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TextToSpeech } from "@/components/TextToSpeech";
 import { SpeakButton } from "@/components/SpeakButton";
 import { useEffect, useState } from "react";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { toast } from "sonner";
 
 export default function Landing() {
   const demoText = "Welcome to your AI Accountability Assistant! I'm here to help you stay focused, track your goals, and maintain productive habits. Let's work together to achieve your objectives.";
@@ -95,6 +96,30 @@ export default function Landing() {
       : (prayerPreferences?.prayerTimes ?? DEFAULT_PRAYER_TIMES).map((p: any) => ({ ...p, status: "pending" })))?.sort(
       (a: any, b: any) => a.time.localeCompare(b.time)
     );
+
+  const user = useQuery(api.users.currentUser);
+  const recordPrayerCheckin = useMutation(api.prayers.recordPrayerCheckin);
+
+  const handlePrayerCheckin = async (
+    prayerName: string,
+    scheduledTime: string,
+    status: "completed" | "missed"
+  ) => {
+    if (!user) {
+      toast("Please sign in to track prayers");
+      return;
+    }
+    try {
+      await recordPrayerCheckin({ prayerName, scheduledTime, status });
+      if (status === "completed") {
+        toast.success(`🤲 ${prayerName} prayer recorded! Barakallahu feeki`);
+      } else {
+        toast(`${prayerName} prayer marked as missed. Allah is Most Forgiving 💚`);
+      }
+    } catch {
+      toast.error("Failed to record prayer");
+    }
+  };
 
   return (
     <motion.div
@@ -222,10 +247,51 @@ export default function Landing() {
                   {(sortedTodaysPrayers || []).map((prayer: any) => (
                     <div
                       key={prayer.name}
-                      className="p-3 rounded-lg border text-center bg-black/20 border-gray-700"
+                      className={`p-3 rounded-lg border text-center ${
+                        prayer.status === "completed"
+                          ? "bg-[#00ff88]/20 border-[#00ff88]/50"
+                          : prayer.status === "missed"
+                          ? "bg-[#ff0080]/20 border-[#ff0080]/50"
+                          : "bg-black/20 border-gray-700"
+                      }`}
                     >
                       <div className="text-sm font-medium text-white">{prayer.name}</div>
-                      <div className="text-xs text-gray-400">{prayer.time}</div>
+                      <div className="text-xs text-gray-400 mb-2">{prayer.time}</div>
+                      <div className="flex justify-center space-x-1">
+                        {prayer.status === "pending" && prayer.enabled && user && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                handlePrayerCheckin(prayer.name, prayer.time, "completed")
+                              }
+                              className="h-6 w-6 p-0 border-[#00ff88] text-[#00ff88]"
+                            >
+                              <Check className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                handlePrayerCheckin(prayer.name, prayer.time, "missed")
+                              }
+                              className="h-6 w-6 p-0 border-[#ff0080] text-[#ff0080]"
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </>
+                        )}
+                        {!user && prayer.status === "pending" && prayer.enabled && (
+                          <span className="text-[10px] text-gray-400">Sign in to track</span>
+                        )}
+                        {prayer.status === "completed" && (
+                          <Check className="w-4 h-4 text-[#00ff88]" />
+                        )}
+                        {prayer.status === "missed" && (
+                          <X className="w-4 h-4 text-[#ff0080]" />
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
