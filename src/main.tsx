@@ -14,6 +14,8 @@ import Landing from "./pages/Landing.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import "./types/global.d.ts";
 
+const ConvexAuthProviderAny = ConvexAuthProvider as any;
+
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
 
 function RouteSyncer() {
@@ -58,9 +60,10 @@ function RootProviders() {
   // Ensure the app is always wrapped with ConvexAuthProvider so useConvexAuth works
   return (
     <InstrumentationProvider>
-      <ConvexAuthProvider client={convex}>
+      {/* Use memory storage to avoid localStorage in restricted environments */}
+      <ConvexAuthProviderAny client={convex} storage="memory">
         <AppRouter />
-      </ConvexAuthProvider>
+      </ConvexAuthProviderAny>
       <Toaster />
     </InstrumentationProvider>
   );
