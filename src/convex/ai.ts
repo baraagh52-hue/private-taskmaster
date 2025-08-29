@@ -16,11 +16,8 @@ export const chatWithPhi3 = action({
     const startTime = Date.now();
     
     try {
-      // Get current user
-      const user = await ctx.runQuery(api.users.currentUser);
-      if (!user) {
-        throw new Error("User not authenticated");
-      }
+      // Relax auth: allow guest usage
+      const user = await ctx.runQuery(api.users.currentUser).catch(() => null);
 
       // Check if user wants to create a task
       const taskCreationResult = await parseTaskCreationRequest(ctx, args.prompt, args.sessionId);
@@ -85,16 +82,18 @@ Respond in a supportive, understanding tone while being direct about accountabil
 
       const responseTime = Date.now() - startTime;
 
-      // Log the interaction
-      await ctx.runMutation(internal.aiInternal.logInteraction, {
-        userId: user._id,
-        sessionId: args.sessionId,
-        checkinId: args.checkinId,
-        prompt: args.prompt,
-        response: aiResponse,
-        model: "phi3:mini",
-        responseTime,
-      });
+      // Log the interaction only if a user exists
+      if (user) {
+        await ctx.runMutation(internal.aiInternal.logInteraction, {
+          userId: user._id,
+          sessionId: args.sessionId,
+          checkinId: args.checkinId,
+          prompt: args.prompt,
+          response: aiResponse,
+          model: "phi3:mini",
+          responseTime,
+        });
+      }
 
       return {
         response: aiResponse,

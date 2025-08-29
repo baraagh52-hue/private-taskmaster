@@ -2,15 +2,12 @@ import { motion } from "framer-motion";
 import { Loader, Mic, Volume2, Brain, Moon, Clock, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TextToSpeech } from "@/components/TextToSpeech";
-import { SpeakButton } from "@/components/SpeakButton";
-import { useEffect, useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
-import { useNavigate } from "react-router";
+import { Input } from "@/components/ui/input";
+import { useEffect, useState, useRef } from "react";
 
-// Add type for local guest prayer check-ins
 type LocalCheckins = Record<string, Record<string, { status: "completed" | "missed"; actualTime?: number }>>;
 
 export default function Landing() {
@@ -33,6 +30,17 @@ export default function Landing() {
 
   // Add local guest check-ins store
   const [localCheckins, setLocalCheckins] = useState<LocalCheckins>({});
+
+  // Add AI + STT test states and hooks
+  const chatWithPhi3 = useAction(api.ai.chatWithPhi3);
+  const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; text: string; time: number }>>([]);
+  const [userInput, setUserInput] = useState<string>("");
+  const [sending, setSending] = useState<boolean>(false);
+  const [listening, setListening] = useState<boolean>(false);
+  const recognitionRef = useRef<any>(null);
+  const sttSupported =
+    typeof window !== "undefined" &&
+    (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window));
 
   useEffect(() => {
     try {
@@ -156,32 +164,78 @@ export default function Landing() {
     }
   };
 
-  const navigate = useNavigate();
-
-  const handleVoiceInteractionClick = () => {
+  const scrollToChat = () => {
     const el = document.getElementById("tts-demo");
     if (el) el.scrollIntoView({ behavior: "smooth" });
-    try {
-      if ("speechSynthesis" in window) {
-        const u = new SpeechSynthesisUtterance(demoText);
-        u.rate = 0.95;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(u);
-      }
-    } catch {}
   };
 
-  // Update buttons to stay on single page (no navigation)
+  const startListening = () => {
+    if (!sttSupported || listening) return;
+    try {
+      const Rec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const rec = new Rec();
+      recognitionRef.current = rec;
+      rec.lang = "en-US";
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      rec.onresult = (e: any) => {
+        const transcript = e?.results?.[0]?.[0]?.transcript || "";
+        if (transcript) setUserInput(transcript);
+      };
+      rec.onerror = () => setListening(false);
+      rec.onend = () => setListening(false);
+      rec.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+      toast("Microphone is unavailable in this browser.");
+    }
+  };
+
+  const stopListening = () => {
+    try {
+      recognitionRef.current?.stop?.();
+    } catch {}
+    setListening(false);
+  };
+
+  const sendMessage = async () => {
+    const text = userInput.trim();
+    if (!text || sending) return;
+    setMessages((m: Array<{ role: "user" | "assistant"; text: string; time: number }>) => [...m, { role: "user", text, time: Date.now() }]);
+    setUserInput("");
+    setSending(true);
+    try {
+      const res: any = await chatWithPhi3({
+        prompt: text,
+        context: nextPrayer ? `Next prayer: ${nextPrayer.name} at ${nextPrayer.time}` : "General",
+      } as any);
+      const aiText = res?.response || "No response.";
+      setMessages((m: Array<{ role: "user" | "assistant"; text: string; time: number }>) => [...m, { role: "assistant", text: aiText, time: Date.now() }]);
+    } catch (e: any) {
+      toast.error(`AI error: ${e?.message || "Failed to send message"}`);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleVoiceInteractionClick = () => {
+    scrollToChat();
+    if (sttSupported) {
+      startListening();
+    } else {
+      toast("Speech-to-text is not supported in this browser.");
+    }
+  };
+
   const handleGoalTrackingClick = () => {
-    const el = document.getElementById("tts-demo");
-    if (el) el.scrollIntoView({ behavior: "smooth" });
-    toast("Goal tracking will live here on this single page.");
+    scrollToChat();
+    toast("Use the chat to log goals or ask for accountability prompts.");
   };
 
   const handleSmartInsightsClick = () => {
-    const el = document.getElementById("tts-demo");
-    if (el) el.scrollIntoView({ behavior: "smooth" });
-    toast("Smart insights will be shown here on this single page.");
+    scrollToChat();
+    toast("Ask the AI for insights or tips in the chat.");
   };
 
   const handleGetStarted = () => {
@@ -375,7 +429,7 @@ export default function Landing() {
             </Card>
           </motion.div>
 
-          {/* TTS Demo Section */}
+          {/* AI Test Section (replaces previous TTS Demo) */}
           <motion.div
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -386,15 +440,66 @@ export default function Landing() {
             <Card className="border-primary/20">
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  Try Voice Interaction
-                  <SpeakButton text={demoText} />
+                  Test AI Assistant
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Mic className={`h-4 w-4 ${listening ? "text-primary animate-pulse" : ""}`} />
+                    {sttSupported ? (listening ? "Listening..." : "Mic Ready") : "STT Unavailable"}
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  {demoText}
-                </p>
-                <TextToSpeech text={demoText} showControls={true} />
+                <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  {messages.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">
+                      Type a message below or tap the mic to dictate, then press Send. Ask for goals, accountability, or prayer-related prompts.
+                    </div>
+                  ) : (
+                    messages.map((m: { role: "user" | "assistant"; text: string; time: number }, idx: number) => (
+                      <div
+                        key={idx}
+                        className={`p-2 rounded-md text-sm ${
+                          m.role === "user"
+                            ? "bg-primary/10 border border-primary/20"
+                            : "bg-secondary/50 border border-secondary/20"
+                        }`}
+                      >
+                        {m.text}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={userInput}
+                    onChange={(e) => setUserInput(e.target.value)}
+                    placeholder="Type a message or use the mic..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") sendMessage();
+                    }}
+                  />
+                  {sttSupported && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={listening ? stopListening : startListening}
+                      className={listening ? "border-primary text-primary" : ""}
+                    >
+                      <Mic className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={sendMessage}
+                    disabled={sending || !userInput.trim()}
+                  >
+                    {sending ? (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    ) : (
+                      "Send"
+                    )}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </motion.div>
