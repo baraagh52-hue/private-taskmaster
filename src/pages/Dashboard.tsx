@@ -484,100 +484,98 @@ export default function Dashboard() {
 
       <div className="max-w-7xl mx-auto p-6">
         {/* Prayer Reminders Section */}
-        {prayerPreferences?.prayerRemindersEnabled && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6"
-          >
-            <Card className="bg-gradient-to-r from-[#ff0080]/10 to-[#00ff88]/10 border-[#ff0080]/30">
-              <CardHeader>
-                <CardTitle className="text-white flex items-center">
-                  <Moon className="w-5 h-5 mr-2 text-[#ff0080]" />
-                  Today's Prayers
-                  {prayerStats && (
-                    <Badge className="ml-2 bg-[#00ff88] text-black">
-                      {prayerStats.streak} day streak
-                    </Badge>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {/* Next Prayer Countdown Box */}
-                {nextPrayer && (
-                  <div className="mb-4 p-4 rounded-lg border bg-black/30 border-[#00ff88]/40 flex items-center justify-between">
-                    <div>
-                      <div className="text-sm text-gray-400">Next Prayer</div>
-                      <div className="text-lg font-semibold text-white">
-                        {nextPrayer.name}{" "}
-                        <span className="text-gray-400">
-                          at {nextPrayer.time}{nextPrayer.isTomorrow ? " (tomorrow)" : ""}
-                        </span>
-                      </div>
-                    </div>
-                    <div className={`text-2xl font-bold ${countdown === "Now" ? "text-[#ff0080]" : "text-[#00ff88]"}`}>
-                      {countdown}
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-5 gap-2">
-                  {(sortedTodaysPrayers || []).map((prayer: any) => (
-                    <div
-                      key={prayer.name}
-                      className={`p-3 rounded-lg border text-center ${
-                        prayer.status === "completed"
-                          ? "bg-[#00ff88]/20 border-[#00ff88]/50"
-                          : prayer.status === "missed"
-                          ? "bg-[#ff0080]/20 border-[#ff0080]/50"
-                          : "bg-black/20 border-gray-700"
-                      }`}
-                    >
-                      <div className="text-sm font-medium text-white">{prayer.name}</div>
-                      <div className="text-xs text-gray-400 mb-2">{prayer.time}</div>
-                      <div className="flex justify-center space-x-1">
-                        {prayer.status === "pending" && prayer.enabled && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handlePrayerCheckin(prayer.name, prayer.time, "completed")}
-                              className="h-6 w-6 p-0 border-[#00ff88] text-[#00ff88]"
-                            >
-                              <Check className="w-3 h-3" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handlePrayerCheckin(prayer.name, prayer.time, "missed")}
-                              className="h-6 w-6 p-0 border-[#ff0080] text-[#ff0080]"
-                            >
-                              <X className="w-3 h-3" />
-                            </Button>
-                          </>
-                        )}
-                        {prayer.status === "completed" && (
-                          <CheckCircle className="w-4 h-4 text-[#00ff88]" />
-                        )}
-                        {prayer.status === "missed" && (
-                          <X className="w-4 h-4 text-[#ff0080]" />
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6"
+        >
+          <Card className="bg-gradient-to-r from-[#ff0080]/10 to-[#00ff88]/10 border-[#ff0080]/30">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center">
+                <Moon className="w-5 h-5 mr-2 text-[#ff0080]" />
+                Today's Prayers
                 {prayerStats && (
-                  <div className="mt-4 text-center">
-                    <Progress value={prayerStats.completionRate} className="h-2 mb-2" />
-                    <p className="text-sm text-gray-400">
-                      {prayerStats.completedPrayers}/{prayerStats.totalPrayers} prayers this week ({prayerStats.completionRate}%)
-                    </p>
-                  </div>
+                  <Badge className="ml-2 bg-[#00ff88] text-black">
+                    {prayerStats.streak} day streak
+                  </Badge>
                 )}
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {/* Next Prayer Countdown Box */}
+              {nextPrayer && (
+                <div className="mb-4 p-4 rounded-lg border bg-black/30 border-[#00ff88]/40 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-gray-400">Next Prayer</div>
+                    <div className="text-lg font-semibold text-white">
+                      {nextPrayer.name}{" "}
+                      <span className="text-gray-400">
+                        at {nextPrayer.time}{nextPrayer.isTomorrow ? " (tomorrow)" : ""}
+                      </span>
+                    </div>
+                  </div>
+                  <div className={`text-2xl font-bold ${countdown === "Now" ? "text-[#ff0080]" : "text-[#00ff88]"}`}>
+                    {countdown}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-5 gap-2">
+                {(sortedTodaysPrayers || []).map((prayer: any) => (
+                  <div
+                    key={prayer.name}
+                    className={`p-3 rounded-lg border text-center ${
+                      prayer.status === "completed"
+                        ? "bg-[#00ff88]/20 border-[#00ff88]/50"
+                        : prayer.status === "missed"
+                        ? "bg-[#ff0080]/20 border-[#ff0080]/50"
+                        : "bg-black/20 border-gray-700"
+                    }`}
+                  >
+                    <div className="text-sm font-medium text-white">{prayer.name}</div>
+                    <div className="text-xs text-gray-400 mb-2">{prayer.time}</div>
+                    <div className="flex justify-center space-x-1">
+                      {prayer.status === "pending" && prayer.enabled && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handlePrayerCheckin(prayer.name, prayer.time, "completed")}
+                            className="h-6 w-6 p-0 border-[#00ff88] text-[#00ff88]"
+                          >
+                            <Check className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handlePrayerCheckin(prayer.name, prayer.time, "missed")}
+                            className="h-6 w-6 p-0 border-[#ff0080] text-[#ff0080]"
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </>
+                      )}
+                      {prayer.status === "completed" && (
+                        <CheckCircle className="w-4 h-4 text-[#00ff88]" />
+                      )}
+                      {prayer.status === "missed" && (
+                        <X className="w-4 h-4 text-[#ff0080]" />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {prayerStats && (
+                <div className="mt-4 text-center">
+                  <Progress value={prayerStats.completionRate} className="h-2 mb-2" />
+                  <p className="text-sm text-gray-400">
+                    {prayerStats.completedPrayers}/{prayerStats.totalPrayers} prayers this week ({prayerStats.completionRate}%)
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
 
         {/* Current Session */}
         {currentSession ? (
