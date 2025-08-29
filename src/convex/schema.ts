@@ -16,6 +16,27 @@ export const roleValidator = v.union(
 );
 export type Role = Infer<typeof roleValidator>;
 
+// Add session and check-in related validators and constants
+export const SESSION_STATUS = {
+  ACTIVE: "active",
+  COMPLETED: "completed",
+  ABANDONED: "abandoned",
+} as const;
+
+export const sessionStatusValidator = v.union(
+  v.literal(SESSION_STATUS.ACTIVE),
+  v.literal(SESSION_STATUS.COMPLETED),
+  v.literal(SESSION_STATUS.ABANDONED),
+);
+
+// A simple response discriminator for check-ins
+export const checkinResponseValidator = v.union(
+  v.literal("progress"),
+  v.literal("stuck"),
+  v.literal("done"),
+  v.literal("other"),
+);
+
 const schema = defineSchema(
   {
     // default auth tables using convex auth.
@@ -40,10 +61,52 @@ const schema = defineSchema(
 
     // add other tables here
 
-    // tableName: defineTable({
-    //   ...
-    //   // table fields
-    // }).index("by_field", ["field"])
+    // Sessions table
+    sessions: defineTable({
+      userId: v.id("users"),
+      title: v.string(),
+      description: v.optional(v.string()),
+      tasks: v.array(v.string()),
+      status: sessionStatusValidator,
+      startTime: v.number(),
+      endTime: v.optional(v.number()),
+      plannedDuration: v.number(), // minutes
+      actualDuration: v.optional(v.number()), // minutes
+      productivity: v.optional(v.number()), // 0-10
+      notes: v.optional(v.string()),
+    })
+      .index("by_user", ["userId"])
+      .index("by_user_and_status", ["userId", "status"]),
+
+    // Check-ins table
+    checkins: defineTable({
+      sessionId: v.id("sessions"),
+      userId: v.id("users"),
+      response: checkinResponseValidator,
+      description: v.optional(v.string()),
+      aiPrompt: v.optional(v.string()),
+      aiResponse: v.optional(v.string()),
+      voiceInput: v.optional(v.boolean()),
+      voiceOutput: v.optional(v.boolean()),
+      mood: v.optional(v.number()),
+      focus: v.optional(v.number()),
+      timestamp: v.number(),
+    })
+      .index("by_session", ["sessionId"])
+      .index("by_user", ["userId"]),
+
+    // AI interactions log
+    aiInteractions: defineTable({
+      userId: v.id("users"),
+      sessionId: v.optional(v.id("sessions")),
+      checkinId: v.optional(v.id("checkins")),
+      prompt: v.string(),
+      response: v.string(),
+      model: v.string(),
+      responseTime: v.optional(v.number()),
+      tokens: v.optional(v.number()),
+      timestamp: v.number(),
+    }).index("by_user", ["userId"]),
   },
   {
     schemaValidation: false,

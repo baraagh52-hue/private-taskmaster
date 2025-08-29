@@ -63,7 +63,7 @@ Respond in a supportive, understanding tone while being direct about accountabil
       const responseTime = Date.now() - startTime;
 
       // Log the interaction
-      await ctx.runMutation(internal.ai.logInteraction, {
+      await ctx.runMutation(internal.aiInternal.logInteraction, {
         userId: user._id,
         sessionId: args.sessionId,
         checkinId: args.checkinId,
@@ -152,25 +152,5 @@ export const generateAccountabilityPrompt = action({
         error: error instanceof Error ? error.message : "Unknown error",
       };
     }
-  },
-});
-
-// Internal function to log AI interactions
-export const logInteraction = mutation({
-  args: {
-    userId: v.id("users"),
-    sessionId: v.optional(v.id("sessions")),
-    checkinId: v.optional(v.id("checkins")),
-    prompt: v.string(),
-    response: v.string(),
-    model: v.string(),
-    responseTime: v.optional(v.number()),
-    tokens: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db.insert("aiInteractions", {
-      ...args,
-      timestamp: Date.now(),
-    });
   },
 });
