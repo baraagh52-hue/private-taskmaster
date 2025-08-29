@@ -22,6 +22,7 @@ import type * as http from "../http.js";
 import type * as sessions from "../sessions.js";
 import type * as users from "../users.js";
 import type * as voice from "../voice.js";
+import type * as voicePreferences from "../voicePreferences.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   sessions: typeof sessions;
   users: typeof users;
   voice: typeof voice;
+  voicePreferences: typeof voicePreferences;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,
