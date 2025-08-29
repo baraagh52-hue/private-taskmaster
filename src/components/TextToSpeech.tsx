@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Pause, Square, Volume2, Settings } from 'lucide-react';
+import { Play, Pause, Square, Volume2, Settings, Zap, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useTextToSpeech } from '@/hooks/use-text-to-speech';
 
@@ -27,6 +28,7 @@ export const TextToSpeech: React.FC<TextToSpeechProps> = ({
   const [tempPitch, setTempPitch] = useState<number[]>([1]);
   const [tempVolume, setTempVolume] = useState<number[]>([1]);
   const [tempVoice, setTempVoice] = useState<string>('');
+  const [selectedModel, setSelectedModel] = useState<string>('');
 
   const {
     speak,
@@ -35,11 +37,13 @@ export const TextToSpeech: React.FC<TextToSpeechProps> = ({
     stop,
     isSpeaking,
     isPaused,
+    isLoading,
     voices,
     isSupported,
     voicePreferences,
     saveVoicePreferences,
     preferredVoice,
+    coquiStatus,
   } = useTextToSpeech();
 
   // Initialize temp values when preferences load
@@ -68,6 +72,7 @@ export const TextToSpeech: React.FC<TextToSpeechProps> = ({
         rate: tempRate[0],
         pitch: tempPitch[0],
         volume: tempVolume[0],
+        model: selectedModel || undefined,
       });
     }
   };
@@ -109,6 +114,18 @@ export const TextToSpeech: React.FC<TextToSpeechProps> = ({
           <CardTitle className="flex items-center gap-2 text-sm">
             <Volume2 className="h-4 w-4" />
             Text-to-Speech
+            {coquiStatus.available && (
+              <Badge variant="secondary" className="ml-2">
+                <Zap className="h-3 w-3 mr-1" />
+                Coqui TTS
+              </Badge>
+            )}
+            {!coquiStatus.available && coquiStatus.configured && (
+              <Badge variant="outline" className="ml-2">
+                <Globe className="h-3 w-3 mr-1" />
+                Browser TTS
+              </Badge>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -116,16 +133,18 @@ export const TextToSpeech: React.FC<TextToSpeechProps> = ({
           <div className="flex items-center gap-2">
             <Button
               onClick={handleSpeak}
-              disabled={!text.trim() || (isSpeaking && !isPaused)}
+              disabled={!text.trim() || (isSpeaking && !isPaused) || isLoading}
               size="sm"
               variant="default"
             >
-              {isPaused ? (
+              {isLoading ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              ) : isPaused ? (
                 <Play className="h-4 w-4" />
               ) : (
                 <Play className="h-4 w-4" />
               )}
-              {isPaused ? 'Resume' : 'Speak'}
+              {isLoading ? 'Loading...' : isPaused ? 'Resume' : 'Speak'}
             </Button>
 
             {isSpeaking && !isPaused && (
@@ -152,14 +171,37 @@ export const TextToSpeech: React.FC<TextToSpeechProps> = ({
           </div>
 
           {/* Status */}
-          {isSpeaking && (
+          {(isSpeaking || isLoading) && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="text-xs text-muted-foreground"
+              className="text-xs text-muted-foreground flex items-center gap-2"
             >
-              {isPaused ? 'Paused' : 'Speaking...'}
+              {isLoading ? (
+                <>
+                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Generating speech...
+                </>
+              ) : isPaused ? (
+                'Paused'
+              ) : (
+                <>
+                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+                  Speaking...
+                </>
+              )}
             </motion.div>
+          )}
+
+          {/* Coqui Status */}
+          {coquiStatus.configured && (
+            <div className="text-xs text-muted-foreground">
+              Coqui TTS: {coquiStatus.available ? (
+                <span className="text-green-500">Available</span>
+              ) : (
+                <span className="text-yellow-500">Offline (using browser fallback)</span>
+              )}
+            </div>
           )}
 
           {/* Settings Panel */}
@@ -171,9 +213,31 @@ export const TextToSpeech: React.FC<TextToSpeechProps> = ({
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-4 pt-2 border-t"
               >
-                {/* Voice Selection */}
+                {/* Coqui Model Selection */}
+                {coquiStatus.available && coquiStatus.models && coquiStatus.models.length > 0 && (
+                  <div className="space-y-2">
+                    <Label htmlFor="model-select" className="text-xs">Coqui TTS Model</Label>
+                    <Select value={selectedModel} onValueChange={setSelectedModel}>
+                      <SelectTrigger id="model-select" className="h-8">
+                        <SelectValue placeholder="Select a model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">Default Model</SelectItem>
+                        {coquiStatus.models.map((model: any, index: number) => (
+                          <SelectItem key={index} value={model.name || model}>
+                            {model.name || model}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Voice Selection (for browser fallback) */}
                 <div className="space-y-2">
-                  <Label htmlFor="voice-select" className="text-xs">Voice</Label>
+                  <Label htmlFor="voice-select" className="text-xs">
+                    Browser Voice {!coquiStatus.available && "(Fallback)"}
+                  </Label>
                   <Select value={tempVoice} onValueChange={setTempVoice}>
                     <SelectTrigger id="voice-select" className="h-8">
                       <SelectValue placeholder="Select a voice" />

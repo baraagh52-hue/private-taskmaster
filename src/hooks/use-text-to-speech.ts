@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { toast } from 'sonner';
 
@@ -8,6 +8,9 @@ interface TTSOptions {
   rate?: number;
   pitch?: number;
   volume?: number;
+  model?: string;
+  speakerId?: string;
+  languageId?: string;
 }
 
 export const useTextToSpeech = () => {
@@ -15,10 +18,21 @@ export const useTextToSpeech = () => {
   const [isPaused, setIsPaused] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isSupported, setIsSupported] = useState(false);
+  const [coquiStatus, setCoquiStatus] = useState<{
+    available: boolean;
+    configured: boolean;
+    models?: any[];
+  }>({ available: false, configured: false });
+  const [isLoading, setIsLoading] = useState(false);
+  
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   
   const voicePreferences = useQuery(api.voicePreferences.getUserVoicePreferences);
   const updatePreferences = useMutation(api.voicePreferences.updateVoicePreferences);
+  const textToSpeechAction = useAction(api.voice.textToSpeech);
+  const checkCoquiStatusAction = useAction(api.voice.checkCoquiStatus);
+  const getCoquiModelsAction = useAction(api.voice.getCoquiModels);
 
   // Check for browser support
   useEffect(() => {
@@ -29,6 +43,27 @@ export const useTextToSpeech = () => {
       toast.error('Your browser does not support text-to-speech');
     }
   }, []);
+
+  // Check Coqui TTS status on mount
+  useEffect(() => {
+    const checkCoqui = async () => {
+      try {
+        const status = await checkCoquiStatusAction();
+        setCoquiStatus(status);
+        
+        if (status.available) {
+          const modelsResult = await getCoquiModelsAction();
+          if (modelsResult.success) {
+            setCoquiStatus(prev => ({ ...prev, models: modelsResult.models }));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check Coqui status:', error);
+      }
+    };
+    
+    checkCoqui();
+  }, [checkCoquiStatusAction, getCoquiModelsAction]);
 
   // Load available voices
   useEffect(() => {
@@ -64,9 +99,74 @@ export const useTextToSpeech = () => {
     return voices.find(voice => voice.name === voicePreferences.preferredVoice) || voices[0] || null;
   }, [voices, voicePreferences?.preferredVoice]);
 
-  const speak = useCallback((text: string, options?: TTSOptions) => {
-    if (!isSupported || !text.trim()) {
-      toast.error('Cannot speak: browser not supported or no text provided');
+  const speak = useCallback(async (text: string, options?: TTSOptions) => {
+    if (!text.trim()) {
+      toast.error('No text provided for speech synthesis');
+      return;
+    }
+
+    setIsLoading(true);
+    
+    try {
+      // Try Coqui TTS first if available
+      if (coquiStatus.available) {
+        const result = await textToSpeechAction({
+          text,
+          model: options?.model,
+          speakerId: options?.speakerId,
+          languageId: options?.languageId,
+        });
+        
+        if (result.success && result.provider === 'coqui' && result.audioData) {
+          // Play Coqui-generated audio
+          const audio = new Audio(result.audioUrl);
+          audioRef.current = audio;
+          
+          audio.onloadstart = () => {
+            setIsSpeaking(true);
+            setIsPaused(false);
+            setIsLoading(false);
+          };
+          
+          audio.onended = () => {
+            setIsSpeaking(false);
+            setIsPaused(false);
+          };
+          
+          audio.onerror = (error) => {
+            console.error('Audio playback error:', error);
+            toast.error('Failed to play generated audio');
+            setIsSpeaking(false);
+            setIsPaused(false);
+            setIsLoading(false);
+            // Fallback to browser TTS
+            speakWithBrowser(text, options);
+          };
+          
+          await audio.play();
+          toast.success('Using Coqui TTS for high-quality speech');
+          return;
+        }
+      }
+      
+      // Fallback to browser TTS
+      setIsLoading(false);
+      speakWithBrowser(text, options);
+      
+    } catch (error) {
+      console.error('TTS error:', error);
+      setIsLoading(false);
+      toast.error('Speech synthesis failed');
+      // Try browser fallback
+      if (isSupported) {
+        speakWithBrowser(text, options);
+      }
+    }
+  }, [coquiStatus.available, textToSpeechAction, isSupported, voicePreferences, getPreferredVoice]);
+
+  const speakWithBrowser = useCallback((text: string, options?: TTSOptions) => {
+    if (!isSupported) {
+      toast.error('Browser TTS not supported');
       return;
     }
 
@@ -107,7 +207,7 @@ export const useTextToSpeech = () => {
     
     utterance.onerror = (event) => {
       console.error('Speech synthesis error:', event);
-      toast.error('Speech synthesis failed');
+      toast.error('Browser speech synthesis failed');
       setIsSpeaking(false);
       setIsPaused(false);
     };
@@ -117,23 +217,35 @@ export const useTextToSpeech = () => {
   }, [isSupported, voicePreferences, getPreferredVoice]);
 
   const pause = useCallback(() => {
-    if (isSupported && window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+      setIsPaused(true);
+    } else if (isSupported && window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
       window.speechSynthesis.pause();
     }
   }, [isSupported]);
 
   const resume = useCallback(() => {
-    if (isSupported && window.speechSynthesis.paused) {
+    if (audioRef.current && audioRef.current.paused) {
+      audioRef.current.play();
+      setIsPaused(false);
+    } else if (isSupported && window.speechSynthesis.paused) {
       window.speechSynthesis.resume();
     }
   }, [isSupported]);
 
   const stop = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    
     if (isSupported) {
       window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      setIsPaused(false);
     }
+    
+    setIsSpeaking(false);
+    setIsPaused(false);
   }, [isSupported]);
 
   const saveVoicePreferences = useCallback(async (preferences: {
@@ -158,10 +270,12 @@ export const useTextToSpeech = () => {
     stop,
     isSpeaking,
     isPaused,
+    isLoading,
     voices,
     isSupported,
     voicePreferences,
     saveVoicePreferences,
     preferredVoice: getPreferredVoice(),
+    coquiStatus,
   };
 };
