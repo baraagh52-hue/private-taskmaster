@@ -2,7 +2,7 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 // Ollama API integration for local Phi-3 mini
 export const chatWithPhi3 = action({
@@ -17,7 +17,7 @@ export const chatWithPhi3 = action({
     
     try {
       // Get current user
-      const user = await ctx.runQuery(internal.users.currentUser);
+      const user = await ctx.runQuery(api.users.currentUser);
       if (!user) {
         throw new Error("User not authenticated");
       }
@@ -101,23 +101,29 @@ export const generateAccountabilityPrompt = action({
     lastCheckinResponse: v.optional(v.string()),
     timeElapsed: v.number(), // minutes since last check-in
   },
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args
+  ): Promise<{ prompt: string; context: string; success: boolean; error?: string }> => {
     try {
-      const user = await ctx.runQuery(internal.users.currentUser);
+      const user = await ctx.runQuery(api.users.currentUser);
       if (!user) {
         throw new Error("User not authenticated");
       }
 
-      const session = await ctx.runQuery(internal.sessions.getSession, {
-        sessionId: args.sessionId,
-      });
+      const session: { title: string; tasks: string[] } | null = await ctx.runQuery(
+        internal.sessions.getSession,
+        {
+          sessionId: args.sessionId,
+        },
+      );
 
       if (!session) {
         throw new Error("Session not found");
       }
 
       // Generate context-aware prompts based on session progress
-      let promptContext = `Session: "${session.title}"`;
+      let promptContext: string = `Session: "${session.title}"`;
       if (session.tasks.length > 0) {
         promptContext += `\nTasks: ${session.tasks.join(", ")}`;
       }
@@ -128,7 +134,7 @@ export const generateAccountabilityPrompt = action({
 
       promptContext += `\nTime elapsed: ${args.timeElapsed} minutes`;
 
-      const prompts = [
+      const prompts: string[] = [
         "How are you progressing on your current task?",
         "What's your current focus level from 1-10?",
         "Are you staying on track with your goals?",

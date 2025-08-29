@@ -16,26 +16,25 @@ export const roleValidator = v.union(
 );
 export type Role = Infer<typeof roleValidator>;
 
-// Add session and check-in related validators and constants
 export const SESSION_STATUS = {
   ACTIVE: "active",
+  PAUSED: "paused",
   COMPLETED: "completed",
   ABANDONED: "abandoned",
 } as const;
 
 export const sessionStatusValidator = v.union(
   v.literal(SESSION_STATUS.ACTIVE),
+  v.literal(SESSION_STATUS.PAUSED),
   v.literal(SESSION_STATUS.COMPLETED),
   v.literal(SESSION_STATUS.ABANDONED),
 );
 
-// A simple response discriminator for check-ins
-export const checkinResponseValidator = v.union(
-  v.literal("progress"),
-  v.literal("stuck"),
-  v.literal("done"),
-  v.literal("other"),
-);
+export const checkinResponseValidator = v.object({
+  text: v.string(),
+  status: v.optional(v.string()),
+  // extend later as needed
+});
 
 const schema = defineSchema(
   {
@@ -60,8 +59,6 @@ const schema = defineSchema(
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
     // add other tables here
-
-    // Sessions table
     sessions: defineTable({
       userId: v.id("users"),
       title: v.string(),
@@ -69,19 +66,17 @@ const schema = defineSchema(
       tasks: v.array(v.string()),
       status: sessionStatusValidator,
       startTime: v.number(),
+      plannedDuration: v.number(),
       endTime: v.optional(v.number()),
-      plannedDuration: v.number(), // minutes
-      actualDuration: v.optional(v.number()), // minutes
-      productivity: v.optional(v.number()), // 0-10
+      actualDuration: v.optional(v.number()),
+      productivity: v.optional(v.number()),
       notes: v.optional(v.string()),
     })
       .index("by_user", ["userId"])
       .index("by_user_and_status", ["userId", "status"]),
 
-    // Check-ins table
     checkins: defineTable({
       sessionId: v.id("sessions"),
-      userId: v.id("users"),
       response: checkinResponseValidator,
       description: v.optional(v.string()),
       aiPrompt: v.optional(v.string()),
@@ -90,12 +85,12 @@ const schema = defineSchema(
       voiceOutput: v.optional(v.boolean()),
       mood: v.optional(v.number()),
       focus: v.optional(v.number()),
+      userId: v.id("users"),
       timestamp: v.number(),
     })
       .index("by_session", ["sessionId"])
       .index("by_user", ["userId"]),
 
-    // AI interactions log
     aiInteractions: defineTable({
       userId: v.id("users"),
       sessionId: v.optional(v.id("sessions")),
@@ -107,6 +102,7 @@ const schema = defineSchema(
       tokens: v.optional(v.number()),
       timestamp: v.number(),
     }).index("by_user", ["userId"]),
+
   },
   {
     schemaValidation: false,

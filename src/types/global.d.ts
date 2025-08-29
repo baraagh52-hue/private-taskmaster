@@ -1,7 +1,28 @@
 declare global {
+  interface SpeechRecognition extends EventTarget {
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    start: () => void;
+    stop: () => void;
+    onresult: ((event: SpeechRecognitionEvent) => void) | null;
+    onerror: ((event: any) => void) | null;
+    onend: ((event: any) => void) | null;
+  }
+
+  interface SpeechRecognitionResult {
+    [index: number]: { transcript: string };
+  }
+
+  interface SpeechRecognitionEvent extends Event {
+    results: {
+      [index: number]: SpeechRecognitionResult;
+    };
+  }
+
   interface Window {
-    SpeechRecognition: typeof SpeechRecognition;
-    webkitSpeechRecognition: typeof SpeechRecognition;
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
   }
 }
 

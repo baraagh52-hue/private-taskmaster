@@ -35,7 +35,7 @@ import { Id } from "@/convex/_generated/dataModel";
 function useVoiceInteraction() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
+  const [recognition, setRecognition] = useState<any | null>(null);
   const [synthesis, setSynthesis] = useState<SpeechSynthesis | null>(null);
 
   useEffect(() => {
@@ -64,7 +64,7 @@ function useVoiceInteraction() {
     }
 
     setIsListening(true);
-    recognition.onresult = (event) => {
+    recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
       onResult(transcript);
       setIsListening(false);
@@ -171,7 +171,7 @@ export default function Dashboard() {
 
   // Auto check-in reminder
   useEffect(() => {
-    const checkinFrequency = user?.checkinFrequency || 25;
+    const checkinFrequency = 25;
     if (currentSession?.status === "active" && lastCheckinTime >= checkinFrequency) {
       toast("Time for a check-in!", {
         description: "How are you progressing on your tasks?",
@@ -249,16 +249,25 @@ export default function Dashboard() {
     if (!currentSession || !response.trim()) return;
 
     try {
-      // Determine response type based on keywords
-      let responseType: "on_task" | "distracted" | "procrastinating" | "break" = "on_task";
+      // Map response to allowed schema values: "progress" | "stuck" | "done" | "other"
+      let responseType: "progress" | "stuck" | "done" | "other" = "progress";
       const lowerResponse = response.toLowerCase();
       
-      if (lowerResponse.includes("distracted") || lowerResponse.includes("unfocused")) {
-        responseType = "distracted";
-      } else if (lowerResponse.includes("procrastinating") || lowerResponse.includes("avoiding")) {
-        responseType = "procrastinating";
+      if (
+        lowerResponse.includes("distracted") ||
+        lowerResponse.includes("unfocused") ||
+        lowerResponse.includes("procrastinating") ||
+        lowerResponse.includes("avoiding")
+      ) {
+        responseType = "stuck";
+      } else if (
+        lowerResponse.includes("done") ||
+        lowerResponse.includes("completed") ||
+        lowerResponse.includes("finished")
+      ) {
+        responseType = "done";
       } else if (lowerResponse.includes("break") || lowerResponse.includes("rest")) {
-        responseType = "break";
+        responseType = "other";
       }
 
       // Get AI response
@@ -378,7 +387,7 @@ export default function Dashboard() {
                     <div>
                       <h4 className="font-semibold mb-2 text-white">Tasks:</h4>
                       <ul className="space-y-1">
-                        {currentSession.tasks.map((task, index) => (
+                        {currentSession.tasks.map((task: string, index: number) => (
                           <li key={index} className="flex items-center text-gray-300">
                             <Target className="w-4 h-4 mr-2 text-[#0088ff]" />
                             {task}
@@ -580,7 +589,7 @@ export default function Dashboard() {
               <CardContent>
                 {recentSessions && recentSessions.length > 0 ? (
                   <div className="space-y-3">
-                    {recentSessions.map((session) => (
+                    {recentSessions.map((session: any) => (
                       <div
                         key={session._id}
                         className="flex items-center justify-between p-3 bg-black/20 rounded-lg border border-gray-700"
@@ -642,7 +651,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {sessionCheckins.slice(0, 3).map((checkin) => (
+                  {sessionCheckins.slice(0, 3).map((checkin: any) => (
                     <div
                       key={checkin._id}
                       className="p-4 bg-black/20 rounded-lg border border-gray-700"
@@ -650,14 +659,16 @@ export default function Dashboard() {
                       <div className="flex justify-between items-start mb-2">
                         <Badge
                           className={`${
-                            checkin.response === "on_task"
+                            checkin.response === "progress"
                               ? "bg-[#00ff88] text-black"
-                              : checkin.response === "distracted"
+                              : checkin.response === "stuck"
                               ? "bg-[#ff0080] text-white"
+                              : checkin.response === "done"
+                              ? "bg-[#0088ff] text-white"
                               : "bg-gray-600 text-white"
                           }`}
                         >
-                          {checkin.response.replace("_", " ")}
+                          {checkin.response}
                         </Badge>
                         <span className="text-gray-400 text-sm">
                           {new Date(checkin.timestamp).toLocaleTimeString()}
