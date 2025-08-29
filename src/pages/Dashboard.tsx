@@ -35,7 +35,7 @@ import { Id } from "@/convex/_generated/dataModel";
 function useVoiceInteraction() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [recognition, setRecognition] = useState<any | null>(null);
+  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
   const [synthesis, setSynthesis] = useState<SpeechSynthesis | null>(null);
 
   useEffect(() => {
@@ -171,7 +171,7 @@ export default function Dashboard() {
 
   // Auto check-in reminder
   useEffect(() => {
-    const checkinFrequency = 25;
+    const checkinFrequency = 25; // default to 25 minutes
     if (currentSession?.status === "active" && lastCheckinTime >= checkinFrequency) {
       toast("Time for a check-in!", {
         description: "How are you progressing on your tasks?",
@@ -249,23 +249,16 @@ export default function Dashboard() {
     if (!currentSession || !response.trim()) return;
 
     try {
-      // Map response to allowed schema values: "progress" | "stuck" | "done" | "other"
+      // Determine response type based on keywords (mapped to schema values)
       let responseType: "progress" | "stuck" | "done" | "other" = "progress";
       const lowerResponse = response.toLowerCase();
-      
-      if (
-        lowerResponse.includes("distracted") ||
-        lowerResponse.includes("unfocused") ||
-        lowerResponse.includes("procrastinating") ||
-        lowerResponse.includes("avoiding")
-      ) {
-        responseType = "stuck";
-      } else if (
-        lowerResponse.includes("done") ||
-        lowerResponse.includes("completed") ||
-        lowerResponse.includes("finished")
-      ) {
+
+      if (lowerResponse.includes("done") || lowerResponse.includes("finished") || lowerResponse.includes("completed")) {
         responseType = "done";
+      } else if (lowerResponse.includes("distracted") || lowerResponse.includes("unfocused")) {
+        responseType = "stuck";
+      } else if (lowerResponse.includes("procrastinat") || lowerResponse.includes("avoiding")) {
+        responseType = "stuck";
       } else if (lowerResponse.includes("break") || lowerResponse.includes("rest")) {
         responseType = "other";
       }
