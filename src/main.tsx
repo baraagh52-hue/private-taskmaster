@@ -5,7 +5,7 @@ import AuthPage from "@/pages/Auth.tsx";
 import Dashboard from "@/pages/Dashboard.tsx";
 import Settings from "@/pages/Settings.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
-import { ConvexReactClient, ConvexProvider } from "convex/react";
+import { ConvexReactClient } from "convex/react";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
@@ -55,30 +55,12 @@ function AppRouter() {
 }
 
 function RootProviders() {
-  const [lsOk, setLsOk] = useState(false);
-
-  useEffect(() => {
-    try {
-      const k = "__ls_test__";
-      window.localStorage.setItem(k, "1");
-      window.localStorage.removeItem(k);
-      setLsOk(true);
-    } catch {
-      setLsOk(false);
-    }
-  }, []);
-
+  // Ensure the app is always wrapped with ConvexAuthProvider so useConvexAuth works
   return (
     <InstrumentationProvider>
-      {lsOk ? (
-        <ConvexAuthProvider client={convex}>
-          <AppRouter />
-        </ConvexAuthProvider>
-      ) : (
-        <ConvexProvider client={convex}>
-          <AppRouter />
-        </ConvexProvider>
-      )}
+      <ConvexAuthProvider client={convex}>
+        <AppRouter />
+      </ConvexAuthProvider>
       <Toaster />
     </InstrumentationProvider>
   );
