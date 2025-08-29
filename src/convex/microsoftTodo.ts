@@ -58,10 +58,10 @@ export const createTask: any = action({
     }
 
     try {
-      // Get environment variables
-      const clientId = process.env.GRAPH_CLIENT_ID;
-      const clientSecret = process.env.GRAPH_CLIENT_SECRET;
-      const tenantId = process.env.GRAPH_TENANT_ID;
+      // Get environment variables (prefer user-saved values from Settings)
+      const clientId = (user as any)?.microsoftClientId ?? process.env.GRAPH_CLIENT_ID;
+      const clientSecret = (user as any)?.microsoftClientSecret ?? process.env.GRAPH_CLIENT_SECRET;
+      const tenantId = (user as any)?.microsoftTenantId ?? process.env.GRAPH_TENANT_ID;
 
       if (!clientId || !clientSecret || !tenantId) {
         throw new Error("Microsoft Graph credentials not configured");
@@ -173,9 +173,9 @@ export const listTasks: any = action({
     }
 
     try {
-      const clientId = process.env.GRAPH_CLIENT_ID;
-      const clientSecret = process.env.GRAPH_CLIENT_SECRET;
-      const tenantId = process.env.GRAPH_TENANT_ID;
+      const clientId = (user as any)?.microsoftClientId ?? process.env.GRAPH_CLIENT_ID;
+      const clientSecret = (user as any)?.microsoftClientSecret ?? process.env.GRAPH_CLIENT_SECRET;
+      const tenantId = (user as any)?.microsoftTenantId ?? process.env.GRAPH_TENANT_ID;
 
       if (!clientId || !clientSecret || !tenantId) {
         throw new Error("Microsoft Graph credentials not configured");

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Loader, Mic, Volume2, Brain, Moon, Clock, Check, X, Trash2 } from "lucide-react";
+import { Loader, Mic, Volume2, Brain, Moon, Clock, Check, X, Trash2, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery, useMutation, useAction } from "convex/react";
@@ -62,17 +62,47 @@ export default function Landing() {
     } catch {}
   }, [tasks]);
 
-  // Handlers for tasks
-  const addTask = () => {
+  // Microsoft To-Do integration
+  const createMicrosoftTask = useAction((api as any).microsoftTodo.createTask);
+  const listMicrosoftTasks = useAction((api as any).microsoftTodo.listTasks);
+
+  // Modified task handlers to use Microsoft To-Do
+  const addTask = async () => {
     const text = newTask.trim();
     if (!text) return;
-    const id =
-      (typeof crypto !== "undefined" && (crypto as any)?.randomUUID)
-        ? (crypto as any).randomUUID()
-        : Math.random().toString(36).slice(2);
-    setTasks((prev) => [{ id, text, done: false, created: Date.now() }, ...prev]);
+    
+    // Add to local state immediately for responsiveness
+    const id = (typeof crypto !== "undefined" && (crypto as any)?.randomUUID)
+      ? (crypto as any).randomUUID()
+      : Math.random().toString(36).slice(2);
+    
+    const newTaskObj = { id, text, done: false, created: Date.now() };
+    setTasks((prev) => [newTaskObj, ...prev]);
     setNewTask("");
-    toast.success("Task added");
+    
+    // Try to sync with Microsoft To-Do if user is authenticated
+    if (user) {
+      try {
+        const result = await createMicrosoftTask({
+          title: text,
+          description: `Created from AI Assistant at ${new Date().toLocaleString()}`,
+        });
+        
+        if (result.success) {
+          toast.success("Task added to Microsoft To-Do!");
+          // Update local task with Microsoft ID
+          setTasks((prev) => prev.map(t => 
+            t.id === id ? { ...t, microsoftId: result.microsoftTaskId } : t
+          ));
+        } else {
+          toast("Task saved locally (Microsoft To-Do sync failed)");
+        }
+      } catch (error) {
+        toast("Task saved locally (Microsoft To-Do not configured)");
+      }
+    } else {
+      toast.success("Task added locally");
+    }
   };
 
   const toggleTask = (id: string, done: boolean) => {
@@ -266,7 +296,19 @@ export default function Landing() {
             transition={{ delay: 0.2 }}
             className="space-y-4"
           >
-            <div className="flex justify-center">
+            <div className="flex justify-center items-center relative">
+              <div className="absolute top-0 right-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.location.href = "/settings"}
+                  className="border-gray-600 text-gray-400 hover:text-white"
+                >
+                  <SettingsIcon className="w-4 h-4 mr-2" />
+                  Settings
+                </Button>
+              </div>
+              
               <div className="relative">
                 <img
                   src="./logo.svg"

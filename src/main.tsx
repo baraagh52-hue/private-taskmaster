@@ -3,6 +3,7 @@ import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { InstrumentationProvider } from "@/instrumentation.tsx";
 import AuthPage from "@/pages/Auth.tsx";
 import Dashboard from "@/pages/Dashboard.tsx";
+import Settings from "@/pages/Settings.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient, ConvexProvider } from "convex/react";
 import { StrictMode, useEffect, useState } from "react";
@@ -46,6 +47,7 @@ function AppRouter() {
         <Route path="/" element={<Landing />} />
         <Route path="/auth" element={<AuthPage redirectAfterAuth="/dashboard" />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
