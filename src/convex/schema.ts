@@ -57,6 +57,20 @@ const schema = defineSchema(
       speechRate: v.optional(v.number()), // speech rate (0.1 to 10)
       speechPitch: v.optional(v.number()), // speech pitch (0 to 2)
       speechVolume: v.optional(v.number()), // speech volume (0 to 1)
+      
+      // Prayer preferences
+      prayerRemindersEnabled: v.optional(v.boolean()),
+      prayerTimes: v.optional(v.array(v.object({
+        name: v.string(), // e.g., "Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"
+        time: v.string(), // e.g., "05:30"
+        enabled: v.boolean()
+      }))),
+      timezone: v.optional(v.string()),
+      
+      // Microsoft To-Do integration
+      microsoftAccessToken: v.optional(v.string()),
+      microsoftRefreshToken: v.optional(v.string()),
+      microsoftTokenExpiry: v.optional(v.number()),
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
     // add other tables here
@@ -103,6 +117,35 @@ const schema = defineSchema(
       tokens: v.optional(v.number()),
       timestamp: v.number(),
     }).index("by_user", ["userId"]),
+
+    // Prayer tracking
+    prayerCheckins: defineTable({
+      userId: v.id("users"),
+      prayerName: v.string(), // "Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"
+      scheduledTime: v.string(), // "05:30"
+      actualTime: v.optional(v.number()), // timestamp when prayer was completed
+      status: v.union(v.literal("completed"), v.literal("missed"), v.literal("pending")),
+      date: v.string(), // "2024-01-15" for tracking daily prayers
+      notes: v.optional(v.string()),
+    })
+      .index("by_user_and_date", ["userId", "date"])
+      .index("by_user_and_prayer", ["userId", "prayerName"]),
+
+    // Microsoft To-Do tasks sync
+    todoTasks: defineTable({
+      userId: v.id("users"),
+      microsoftTaskId: v.optional(v.string()), // ID from Microsoft Graph API
+      title: v.string(),
+      description: v.optional(v.string()),
+      status: v.union(v.literal("notStarted"), v.literal("inProgress"), v.literal("completed")),
+      priority: v.optional(v.union(v.literal("low"), v.literal("normal"), v.literal("high"))),
+      dueDate: v.optional(v.number()),
+      createdFromAI: v.optional(v.boolean()), // Track if task was created via AI
+      sessionId: v.optional(v.id("sessions")), // Link to session if created during session
+      lastSynced: v.optional(v.number()),
+    })
+      .index("by_user", ["userId"])
+      .index("by_user_and_status", ["userId", "status"]),
 
   },
   {

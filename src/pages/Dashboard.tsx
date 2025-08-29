@@ -23,7 +23,13 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
-  Coffee
+  Coffee,
+  Moon,
+  Sun,
+  Calendar,
+  ListTodo,
+  Check,
+  X
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
@@ -144,9 +150,15 @@ export default function Dashboard() {
     currentSession ? { sessionId: currentSession._id } : "skip"
   );
 
+  // Prayer-related queries
+  const prayerPreferences = useQuery(api.prayers.getPrayerPreferences);
+  const todaysPrayerStatus = useQuery(api.prayers.getTodaysPrayerStatus);
+  const prayerStats = useQuery(api.prayers.getPrayerStats, { days: 7 });
+
   const createSession = useMutation(api.sessions.createSession);
   const updateSessionStatus = useMutation(api.sessions.updateSessionStatus);
   const createCheckin = useMutation(api.checkins.createCheckin);
+  const recordPrayerCheckin = useMutation(api.prayers.recordPrayerCheckin);
   const chatWithAI = useAction(api.ai.chatWithPhi3);
 
   // Timer for current session
@@ -168,6 +180,37 @@ export default function Dashboard() {
       return () => clearInterval(interval);
     }
   }, [currentSession, sessionCheckins]);
+
+  // Prayer time reminders
+  useEffect(() => {
+    if (prayerPreferences?.prayerRemindersEnabled && todaysPrayerStatus) {
+      const now = new Date();
+      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      
+      const upcomingPrayer = todaysPrayerStatus.find((prayer: any) => 
+        prayer.enabled && prayer.status === "pending" && prayer.time > currentTime
+      );
+      
+      if (upcomingPrayer) {
+        const prayerTime = new Date();
+        const [hours, minutes] = upcomingPrayer.time.split(':');
+        prayerTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+        
+        const timeUntilPrayer = prayerTime.getTime() - now.getTime();
+        
+        // Remind 5 minutes before prayer time
+        if (timeUntilPrayer > 0 && timeUntilPrayer <= 5 * 60 * 1000) {
+          toast(`🕌 ${upcomingPrayer.name} prayer time in 5 minutes`, {
+            description: `Scheduled for ${upcomingPrayer.time}`,
+            action: {
+              label: "Mark as Done",
+              onClick: () => handlePrayerCheckin(upcomingPrayer.name, upcomingPrayer.time, "completed")
+            }
+          });
+        }
+      }
+    }
+  }, [prayerPreferences, todaysPrayerStatus]);
 
   // Auto check-in reminder
   useEffect(() => {
@@ -228,7 +271,8 @@ export default function Dashboard() {
       "How are you feeling about your progress?",
       "What's your current focus level from 1-10?",
       "Are you staying on track with your tasks?",
-      "Any distractions you're dealing with right now?"
+      "Any distractions you're dealing with right now?",
+      "Need me to add any tasks to your to-do list?"
     ];
 
     const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
@@ -286,10 +330,33 @@ export default function Dashboard() {
         speak(aiResult.response);
       }
 
+      // Show task creation confirmation if task was created
+      if (aiResult.taskCreated) {
+        toast.success(`✅ Task "${aiResult.taskTitle}" added to Microsoft To-Do!`);
+      }
+
       toast.success("Check-in recorded!");
       setCheckinInput("");
     } catch (error) {
       toast.error("Failed to process check-in");
+    }
+  };
+
+  const handlePrayerCheckin = async (prayerName: string, scheduledTime: string, status: "completed" | "missed") => {
+    try {
+      await recordPrayerCheckin({
+        prayerName,
+        scheduledTime,
+        status,
+      });
+      
+      if (status === "completed") {
+        toast.success(`🤲 ${prayerName} prayer recorded! Barakallahu feeki`);
+      } else {
+        toast(`${prayerName} prayer marked as missed. Allah is Most Forgiving 💚`);
+      }
+    } catch (error) {
+      toast.error("Failed to record prayer");
     }
   };
 
@@ -339,6 +406,84 @@ export default function Dashboard() {
       </header>
 
       <div className="max-w-7xl mx-auto p-6">
+        {/* Prayer Reminders Section */}
+        {prayerPreferences?.prayerRemindersEnabled && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <Card className="bg-gradient-to-r from-[#ff0080]/10 to-[#00ff88]/10 border-[#ff0080]/30">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center">
+                  <Moon className="w-5 h-5 mr-2 text-[#ff0080]" />
+                  Today's Prayers
+                  {prayerStats && (
+                    <Badge className="ml-2 bg-[#00ff88] text-black">
+                      {prayerStats.streak} day streak
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-5 gap-2">
+                  {todaysPrayerStatus?.map((prayer: any) => (
+                    <div
+                      key={prayer.name}
+                      className={`p-3 rounded-lg border text-center ${
+                        prayer.status === "completed"
+                          ? "bg-[#00ff88]/20 border-[#00ff88]/50"
+                          : prayer.status === "missed"
+                          ? "bg-[#ff0080]/20 border-[#ff0080]/50"
+                          : "bg-black/20 border-gray-700"
+                      }`}
+                    >
+                      <div className="text-sm font-medium text-white">{prayer.name}</div>
+                      <div className="text-xs text-gray-400 mb-2">{prayer.time}</div>
+                      <div className="flex justify-center space-x-1">
+                        {prayer.status === "pending" && prayer.enabled && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handlePrayerCheckin(prayer.name, prayer.time, "completed")}
+                              className="h-6 w-6 p-0 border-[#00ff88] text-[#00ff88]"
+                            >
+                              <Check className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handlePrayerCheckin(prayer.name, prayer.time, "missed")}
+                              className="h-6 w-6 p-0 border-[#ff0080] text-[#ff0080]"
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </>
+                        )}
+                        {prayer.status === "completed" && (
+                          <CheckCircle className="w-4 h-4 text-[#00ff88]" />
+                        )}
+                        {prayer.status === "missed" && (
+                          <X className="w-4 h-4 text-[#ff0080]" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {prayerStats && (
+                  <div className="mt-4 text-center">
+                    <Progress value={prayerStats.completionRate} className="h-2 mb-2" />
+                    <p className="text-sm text-gray-400">
+                      {prayerStats.completedPrayers}/{prayerStats.totalPrayers} prayers this week ({prayerStats.completionRate}%)
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
         {/* Current Session */}
         {currentSession ? (
           <motion.div
@@ -434,7 +579,7 @@ export default function Dashboard() {
                   {!voiceEnabled && (
                     <div className="space-y-2">
                       <Input
-                        placeholder="How are you progressing? Type your check-in..."
+                        placeholder="How are you progressing? Type your check-in... (Try: 'add task to review documents')"
                         value={checkinInput}
                         onChange={(e) => setCheckinInput(e.target.value)}
                         onKeyPress={(e) => {
@@ -444,6 +589,9 @@ export default function Dashboard() {
                         }}
                         className="bg-black/40 border-gray-700"
                       />
+                      <p className="text-xs text-gray-500">
+                        💡 Try saying: "add task to review documents" or "remind me to call mom"
+                      </p>
                     </div>
                   )}
                 </div>
@@ -556,6 +704,12 @@ export default function Dashboard() {
                     <span className="text-gray-400">Avg Productivity</span>
                     <span className="text-[#ff0080] font-semibold">{sessionStats.avgProductivity}/10</span>
                   </div>
+                  {prayerStats && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Prayer Streak</span>
+                      <span className="text-[#ff0080] font-semibold">{prayerStats.streak} days</span>
+                    </div>
+                  )}
                   <Progress value={sessionStats.completionRate} className="h-2" />
                   <p className="text-sm text-gray-400 text-center">
                     {sessionStats.completionRate}% completion rate

@@ -22,6 +22,12 @@ export const chatWithPhi3 = action({
         throw new Error("User not authenticated");
       }
 
+      // Check if user wants to create a task
+      const taskCreationResult = await parseTaskCreationRequest(ctx, args.prompt, args.sessionId);
+      
+      // Check if user is asking about prayers
+      const prayerResponse = await handlePrayerQuery(ctx, args.prompt);
+
       // Build context-aware prompt for accountability
       const systemPrompt = `You are an AI accountability assistant helping users stay focused and productive. Your role is to:
 1. Provide gentle but firm nudges when users are procrastinating
@@ -29,10 +35,16 @@ export const chatWithPhi3 = action({
 3. Celebrate progress and maintain motivation
 4. Ask follow-up questions to understand the user's current state
 5. Keep responses concise and encouraging (2-3 sentences max)
+6. Help with prayer reminders and Islamic accountability
+7. Create tasks in Microsoft To-Do when requested
+8. Provide prayer time reminders and encouragement
 
 Context: ${args.context || "General productivity check-in"}
 
-Respond in a supportive, understanding tone while being direct about accountability.`;
+${taskCreationResult.created ? `✅ I've added "${taskCreationResult.taskTitle}" to your Microsoft To-Do list!` : ''}
+${prayerResponse ? `🕌 Prayer reminder: ${prayerResponse}` : ''}
+
+Respond in a supportive, understanding tone while being direct about accountability. If the user mentions prayers or Islamic practices, be encouraging and supportive of their spiritual goals.`;
 
       const fullPrompt = `${systemPrompt}\n\nUser: ${args.prompt}`;
 
@@ -59,7 +71,18 @@ Respond in a supportive, understanding tone while being direct about accountabil
       }
 
       const data = await response.json();
-      const aiResponse = data.response;
+      let aiResponse = data.response;
+
+      // Append task creation confirmation if task was created
+      if (taskCreationResult.created) {
+        aiResponse = `✅ I've added "${taskCreationResult.taskTitle}" to your Microsoft To-Do list!\n\n${aiResponse}`;
+      }
+
+      // Append prayer reminder if relevant
+      if (prayerResponse) {
+        aiResponse = `🕌 ${prayerResponse}\n\n${aiResponse}`;
+      }
+
       const responseTime = Date.now() - startTime;
 
       // Log the interaction
@@ -77,6 +100,8 @@ Respond in a supportive, understanding tone while being direct about accountabil
         response: aiResponse,
         responseTime,
         success: true,
+        taskCreated: taskCreationResult.created,
+        taskTitle: taskCreationResult.taskTitle,
       };
     } catch (error) {
       console.error("AI chat error:", error);
@@ -93,6 +118,119 @@ Respond in a supportive, understanding tone while being direct about accountabil
     }
   },
 });
+
+type ChatResult = {
+  response: string;
+  responseTime: number;
+  success: boolean;
+  taskCreated?: boolean;
+  taskTitle?: string;
+  error?: string;
+};
+
+type TaskCreationParseResult = {
+  created: boolean;
+  taskTitle: string;
+  error: string | null;
+};
+
+// Parse task creation requests from user input
+async function parseTaskCreationRequest(
+  ctx: any,
+  prompt: string,
+  sessionId?: string
+): Promise<TaskCreationParseResult> {
+  const lowerPrompt = prompt.toLowerCase();
+  
+  // Check for task creation keywords
+  const taskKeywords = [
+    "add task", "create task", "add to my to-do", "add to todo", "add to my todo",
+    "remind me to", "i need to", "add to my list", "create a task"
+  ];
+  
+  const hasTaskKeyword = taskKeywords.some(keyword => lowerPrompt.includes(keyword));
+  
+  if (hasTaskKeyword) {
+    // Extract task title from the prompt
+    let taskTitle = "";
+    
+    if (lowerPrompt.includes("add task")) {
+      taskTitle = prompt.substring(prompt.toLowerCase().indexOf("add task") + 8).trim();
+    } else if (lowerPrompt.includes("remind me to")) {
+      taskTitle = prompt.substring(prompt.toLowerCase().indexOf("remind me to") + 12).trim();
+    } else if (lowerPrompt.includes("i need to")) {
+      taskTitle = prompt.substring(prompt.toLowerCase().indexOf("i need to") + 9).trim();
+    } else if (lowerPrompt.includes("add to my to-do")) {
+      taskTitle = prompt.substring(prompt.toLowerCase().indexOf("add to my to-do") + 15).trim();
+    } else if (lowerPrompt.includes("create task")) {
+      taskTitle = prompt.substring(prompt.toLowerCase().indexOf("create task") + 11).trim();
+    }
+    
+    // Clean up the task title
+    taskTitle = taskTitle.replace(/^[:\-\s]+/, '').trim();
+    taskTitle = taskTitle.replace(/[.!?]+$/, '').trim();
+    
+    if (taskTitle && taskTitle.length > 0) {
+      try {
+        const result = await ctx.runAction((api as any).microsoftTodo.createTask, {
+          title: taskTitle,
+          description: `Created from AI chat: "${prompt}"`,
+          sessionId: sessionId,
+        });
+        
+        return {
+          created: result.success,
+          taskTitle: taskTitle,
+          error: result.error,
+        };
+      } catch (error) {
+        console.error("Error creating task:", error);
+        return {
+          created: false,
+          taskTitle: taskTitle,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    }
+  }
+  
+  return { created: false, taskTitle: "", error: null };
+}
+
+// Handle prayer-related queries
+async function handlePrayerQuery(ctx: any, prompt: string): Promise<string | null> {
+  const lowerPrompt = prompt.toLowerCase();
+  
+  const prayerKeywords = [
+    "prayer", "salah", "namaz", "fajr", "dhuhr", "asr", "maghrib", "isha",
+    "pray", "praying", "islamic", "muslim", "allah", "dua"
+  ];
+  
+  const hasPrayerKeyword = prayerKeywords.some(keyword => lowerPrompt.includes(keyword));
+  
+  if (hasPrayerKeyword) {
+    try {
+      const prayerStatus = await ctx.runQuery(api.prayers.getTodaysPrayerStatus);
+      const prayerStats = await ctx.runQuery(api.prayers.getPrayerStats, { days: 7 });
+      
+      if (prayerStatus && prayerStatus.length > 0) {
+        const pendingPrayers = prayerStatus.filter((p: any) => p.status === "pending" && p.enabled);
+        const completedToday = prayerStatus.filter((p: any) => p.status === "completed").length;
+        
+        if (pendingPrayers.length > 0) {
+          const nextPrayer = pendingPrayers[0];
+          return `Your next prayer is ${nextPrayer.name} at ${nextPrayer.time}. You've completed ${completedToday}/5 prayers today. May Allah make it easy for you! 🤲`;
+        } else {
+          return `Alhamdulillah! You've completed all your prayers today (${completedToday}/5). Your prayer streak is ${prayerStats?.streak || 0} days! 🌟`;
+        }
+      }
+    } catch (error) {
+      console.error("Error handling prayer query:", error);
+    }
+  }
+  
+  return null;
+}
 
 // Generate accountability prompts based on session context
 export const generateAccountabilityPrompt = action({
@@ -140,6 +278,8 @@ export const generateAccountabilityPrompt = action({
         "Are you staying on track with your goals?",
         "What's been your biggest challenge in the last few minutes?",
         "How can I help you maintain focus right now?",
+        "Have you remembered your prayers today? How's your spiritual focus?",
+        "Any tasks you need me to add to your to-do list?",
       ];
 
       const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
