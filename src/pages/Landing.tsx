@@ -290,6 +290,11 @@ export default function Landing() {
       rec.continuous = true;
       rec.interimResults = true;
       rec.maxAlternatives = 1;
+
+      // Only set as "listening" when recognition actually starts
+      rec.onstart = () => {
+        setHotwordListening(true);
+      };
       
       rec.onresult = (e: any) => {
         const transcript = e?.results?.[e.results.length - 1]?.[0]?.transcript?.toLowerCase() || "";
@@ -336,7 +341,7 @@ export default function Landing() {
       };
       
       rec.start();
-      setHotwordListening(true);
+      // Removed immediate setHotwordListening(true); now handled in onstart
     } catch {
       setHotwordListening(false);
     }
