@@ -2,102 +2,121 @@
 set -euo pipefail
 
 APP_NAME="AI Accountability Assistant"
-APP_CMD_NAME="ai-accountability-assistant"
-INSTALL_DIR="$HOME/.local/share/$APP_CMD_NAME"
+APP_ID="ai-assistant"
+INSTALL_DIR="$HOME/.local/share/$APP_ID"
 BIN_DIR="$HOME/.local/bin"
-DESKTOP_DIR="$HOME/.local/share/applications"
-LAUNCHER_PATH="$BIN_DIR/$APP_CMD_NAME"
-DESKTOP_ENTRY_PATH="$DESKTOP_DIR/$APP_CMD_NAME.desktop"
+LAUNCHER="$BIN_DIR/$APP_ID"
+DESKTOP_FILE="$HOME/.local/share/applications/$APP_ID.desktop"
+ICON_DIR="$HOME/.local/share/icons"
+ICON_FILE="$ICON_DIR/$APP_ID.png"
 
-echo "==> Installing $APP_NAME"
+echo "[1/8] Preparing directories..."
+mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$(dirname "$DESKTOP_FILE")" "$ICON_DIR"
 
-# Create dirs
-mkdir -p "$INSTALL_DIR" "$BIN_DIR" "$DESKTOP_DIR"
-
-# Copy project files (excluding node_modules and build caches if present)
-echo "==> Copying project files to $INSTALL_DIR"
-rsync -a --delete \
-  --exclude node_modules \
-  --exclude .git \
-  --exclude dist \
-  --exclude .turbo \
-  --exclude .next \
-  ./ "$INSTALL_DIR/"
-
-cd "$INSTALL_DIR"
-
-# Ensure Node.js and pnpm exist
-need_node=0
+echo "[2/8] Installing Node & pnpm (user-level)..."
+# Enable corepack and pnpm for the user
 if ! command -v node >/dev/null 2>&1; then
-  need_node=1
+  echo "Node.js not found. Installing Node.js (via fnm for user)..."
+  # Install fnm (Fast Node Manager) user-local
+  curl -fsSL https://fnm.vercel.app/install | bash
+  export PATH="$HOME/.fnm:$PATH"
+  eval "$(fnm env)"
+  fnm install --lts
+  fnm use --lts
+fi
+corepack enable || true
+corepack prepare pnpm@latest --activate || true
+
+echo "[3/8] Copying project files to $INSTALL_DIR..."
+# Use rsync if available for faster copy
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --delete --exclude=node_modules --exclude=dist --exclude=.git ./ "$INSTALL_DIR"/
 else
-  NODE_MAJOR=$(node -v | sed 's/^v\([0-9]\+\).*/\1/')
-  if [ "$NODE_MAJOR" -lt 18 ]; then
-    need_node=1
-  fi
+  # Fallback to cp
+  rm -rf "$INSTALL_DIR"/*
+  cp -R ./ "$INSTALL_DIR"/
+  # remove heavy/unnecessary dirs if present
+  rm -rf "$INSTALL_DIR/node_modules" "$INSTALL_DIR/dist" "$INSTALL_DIR/.git" || true
 fi
 
-if [ "$need_node" -eq 1 ]; then
-  echo "==> Node.js (>=18) not found. Installing Node.js LTS via nvm (user-local)..."
-  # Install nvm user-locally (no sudo)
-  export NVM_DIR="$HOME/.nvm"
-  if [ ! -d "$NVM_DIR" ]; then
-    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-  fi
-  # shellcheck source=/dev/null
-  . "$NVM_DIR/nvm.sh"
-  nvm install --lts
-  nvm use --lts
-fi
-
-# Ensure pnpm
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "==> pnpm not found. Installing pnpm..."
-  corepack enable || true
-  corepack prepare pnpm@latest --activate || npm i -g pnpm
-fi
-
-# Install deps and build
-echo "==> Installing dependencies"
+echo "[4/8] Installing dependencies and building app..."
+cd "$INSTALL_DIR"
 pnpm install --frozen-lockfile || pnpm install
+# Build may fail if environment is not set for prod; still allow dev run via launcher
+if pnpm build; then
+  echo "Build completed."
+else
+  echo "Build failed (continuing). You can run development server via the launcher."
+fi
 
-echo "==> Building application"
-pnpm build
+echo "[5/8] Installing icon..."
+if [ -f "$INSTALL_DIR/public/logo.png" ]; then
+  cp "$INSTALL_DIR/public/logo.png" "$ICON_FILE"
+elif [ -f "$INSTALL_DIR/public/logo.svg" ]; then
+  # Some desktops handle SVG fine
+  cp "$INSTALL_DIR/public/logo.svg" "$ICON_FILE"
+else
+  # Create a placeholder if missing
+  convert -size 512x512 xc:#111111 "$ICON_FILE" 2>/dev/null || true
+fi
 
-# Create launcher script (vite preview)
-echo "==> Creating launcher at $LAUNCHER_PATH"
-cat > "$LAUNCHER_PATH" << 'EOF'
+echo "[6/8] Creating launcher script at $LAUNCHER..."
+cat > "$LAUNCHER" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-APP_DIR="$HOME/.local/share/ai-accountability-assistant"
 
-# Load nvm if present to ensure node in PATH
-if [ -s "$HOME/.nvm/nvm.sh" ]; then
-  # shellcheck source=/dev/null
-  . "$HOME/.nvm/nvm.sh"
+APP_DIR="$HOME/.local/share/ai-assistant"
+
+if [ ! -d "$APP_DIR" ]; then
+  echo "Install directory not found: $APP_DIR"
+  exit 1
 fi
 
 cd "$APP_DIR"
-# Start preview on port 3000 (adjust if needed)
-exec pnpm preview --host --port 3000
-EOF
-chmod +x "$LAUNCHER_PATH"
 
-# Create desktop entry
-echo "==> Creating desktop entry at $DESKTOP_ENTRY_PATH"
-cat > "$DESKTOP_ENTRY_PATH" <<EOF
+# Ensure pnpm available
+if ! command -v pnpm >/dev/null 2>&1; then
+  if command -v corepack >/dev/null 2>&1; then
+    corepack enable || true
+    corepack prepare pnpm@latest --activate || true
+  fi
+fi
+
+# Prefer preview if build exists, otherwise dev
+if [ -d "dist" ]; then
+  # Start preview server
+  exec pnpm preview
+else
+  # Start dev server (Terminal=True in .desktop)
+  exec pnpm dev
+fi
+EOF
+chmod +x "$LAUNCHER"
+
+echo "[7/8] Creating desktop entry at $DESKTOP_FILE..."
+cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
-Type=Application
 Name=$APP_NAME
-Comment=Run $APP_NAME locally
-Exec=$LAUNCHER_PATH
-Icon=${INSTALL_DIR}/public/logo.png
-Terminal=false
-Categories=Utility;Development;
+Comment=Launch the AI Accountability Assistant
+Exec=$LAUNCHER
+Terminal=true
+Type=Application
+Icon=$ICON_FILE
+Categories=Utility;Productivity;
+Keywords=AI;Assistant;Productivity;Tasks;Prayer;
+StartupNotify=false
 EOF
 
-echo "==> Installation complete."
-echo ""
-echo "Launch with: $APP_CMD_NAME"
-echo "Or from your app launcher: $APP_NAME"
-echo "App runs on: http://localhost:3000"
+# Attempt to update desktop database (optional)
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$(dirname "$DESKTOP_FILE")" || true
+fi
+
+echo "[8/8] Done!"
+echo
+echo "Launcher installed:"
+echo "  - Desktop entry: $DESKTOP_FILE"
+echo "  - CLI launcher:  $LAUNCHER"
+echo
+echo "You can launch from your app menu as \"$APP_NAME\" or by running: $APP_ID"
+echo "If it doesn't appear, try:  gtk-update-icon-cache ~/.local/share/icons  (optional) and relogin."

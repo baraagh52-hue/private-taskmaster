@@ -1,42 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Read version from package.json
-if ! command -v node >/dev/null 2>&1; then
-  echo "Node.js is required to run this packager."
-  exit 1
-fi
+PKG_NAME="ai-assistant-installer"
+OUT_DIR="dist_pkg"
+ARCHIVE="${PKG_NAME}.tar.gz"
 
-VERSION=$(node -e "console.log(require('./package.json').version || '0.0.0')")
-PKG_NAME="ai-accountability-assistant-${VERSION}-ubuntu"
-OUT_FILE="${PKG_NAME}.tar.gz"
+echo "Building package..."
+rm -rf "$OUT_DIR"
+mkdir -p "$OUT_DIR"
 
-echo "==> Creating package ${OUT_FILE}"
+# Copy necessary files
+cp -R \
+  package.json \
+  pnpm-lock.yaml 2>/dev/null || true
+cp -R src public index.html README.md components.json "$OUT_DIR"/ 2>/dev/null || true
 
-TMP_DIR="$(mktemp -d)"
-PKG_DIR="$TMP_DIR/$PKG_NAME"
-mkdir -p "$PKG_DIR"
+# Add installer scripts
+cp install.sh uninstall.sh "$OUT_DIR"/
 
-# Copy files excluding heavy/artifact dirs
-rsync -a \
-  --exclude node_modules \
-  --exclude .git \
-  --exclude dist \
-  --exclude .turbo \
-  --exclude .next \
-  ./ "$PKG_DIR/"
+# Create archive at project root
+tar -czf "$ARCHIVE" -C "$OUT_DIR" .
 
-# Ensure installer scripts are executable
-chmod +x "$PKG_DIR/install.sh" "$PKG_DIR/uninstall.sh" || true
-
-# Create archive
-tar -C "$TMP_DIR" -czf "$OUT_FILE" "$PKG_NAME"
-
-# Cleanup temp dir
-rm -rf "$TMP_DIR"
-
-echo "==> Package created: $OUT_FILE"
-echo "Install steps:"
-echo "  tar -xzf $OUT_FILE"
-echo "  cd $PKG_NAME"
-echo "  ./install.sh"
+echo "Package created: $ARCHIVE"
+echo "To install on Ubuntu:"
+echo "  tar -xzf $ARCHIVE"
+echo "  cd $OUT_DIR"
+echo "  bash install.sh"

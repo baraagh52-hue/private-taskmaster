@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_CMD_NAME="ai-accountability-assistant"
-INSTALL_DIR="$HOME/.local/share/$APP_CMD_NAME"
+APP_ID="ai-assistant"
+INSTALL_DIR="$HOME/.local/share/$APP_ID"
 BIN_DIR="$HOME/.local/bin"
-DESKTOP_DIR="$HOME/.local/share/applications"
-LAUNCHER_PATH="$BIN_DIR/$APP_CMD_NAME"
-DESKTOP_ENTRY_PATH="$DESKTOP_DIR/$APP_CMD_NAME.desktop"
+LAUNCHER="$BIN_DIR/$APP_ID"
+DESKTOP_FILE="$HOME/.local/share/applications/$APP_ID.desktop"
+ICON_FILE="$HOME/.local/share/icons/$APP_ID.png"
 
-echo "==> Uninstalling $APP_CMD_NAME"
+echo "Removing launcher, desktop entry, icon, and install dir..."
 
-rm -f "$LAUNCHER_PATH" || true
-rm -f "$DESKTOP_ENTRY_PATH" || true
+rm -f "$LAUNCHER" || true
+rm -f "$DESKTOP_FILE" || true
+rm -f "$ICON_FILE" || true
 rm -rf "$INSTALL_DIR" || true
 
-echo "==> Uninstall complete."
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$HOME/.local/share/applications" || true
+fi
+
+echo "Uninstalled $APP_ID."
