@@ -1,5 +1,4 @@
 import { Toaster } from "@/components/ui/sonner";
-import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { InstrumentationProvider } from "@/instrumentation.tsx";
 import AuthPage from "@/pages/Auth.tsx";
 import Dashboard from "@/pages/Dashboard.tsx";
@@ -89,8 +88,12 @@ function ensureStoragePolyfill() {
 }
 ensureStoragePolyfill();
 
-const convexUrl = (import.meta as any).env?.VITE_CONVEX_URL;
-const convex = new ConvexReactClient(convexUrl);
+// Use env when available; otherwise fall back to local Convex dev URL so the client can initialize.
+const convexUrl = (import.meta as any).env?.VITE_CONVEX_URL as string | undefined;
+const resolvedConvexUrl = convexUrl && typeof convexUrl === "string" && convexUrl.length > 0
+  ? convexUrl
+  : "http://127.0.0.1:8187";
+const convex = new ConvexReactClient(resolvedConvexUrl);
 
 function ConvexWarningBanner() {
   if (convexUrl) return null;
@@ -156,7 +159,7 @@ function RootProviders() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
-      <VlyToolbar />
+      {/* Toolbar removed to avoid missing import crash */}
       <RootProviders />
     </RootErrorBoundary>
   </StrictMode>,
