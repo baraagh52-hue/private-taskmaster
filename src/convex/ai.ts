@@ -43,32 +43,122 @@ ${prayerResponse ? `🕌 Prayer reminder: ${prayerResponse}` : ''}
 
 Respond in a supportive, understanding tone while being direct about accountability. If the user mentions prayers or Islamic practices, be encouraging and supportive of their spiritual goals.`;
 
-      const fullPrompt = `${systemPrompt}\n\nUser: ${args.prompt}`;
+      // Prepare chat messages for provider-style APIs
+      const chatMessages = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: args.prompt },
+      ];
 
-      // Call local Ollama API (assumes Ollama is running on localhost:11434)
-      const response = await fetch("http://localhost:11434/api/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "phi3:mini",
-          prompt: fullPrompt,
-          stream: false,
-          options: {
+      // Provider selection: prefer explicit LLM_PROVIDER, else detect by available keys
+      const providerEnv = (process.env.LLM_PROVIDER || "").toLowerCase();
+      const hasGroq = !!process.env.GROQ_API_KEY;
+      const hasGoogle = !!process.env.GOOGLE_GEMINI_API_KEY;
+
+      let aiResponse = "";
+      let usedModel = "phi3:mini";
+      let usedProvider = "ollama";
+
+      // Helper: call Groq (OpenAI-compatible)
+      const callGroq = async (): Promise<{ text: string; model: string }> => {
+        const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+        const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: chatMessages,
             temperature: 0.7,
             top_p: 0.9,
-            max_tokens: 200,
+            max_tokens: 300,
+          }),
+        });
+        if (!resp.ok) {
+          throw new Error(`Groq API error: ${resp.status} ${resp.statusText}`);
+        }
+        const data: any = await resp.json();
+        const text = data?.choices?.[0]?.message?.content || "";
+        return { text, model };
+      };
+
+      // Helper: call Google Gemini
+      const callGoogle = async (): Promise<{ text: string; model: string }> => {
+        const model = process.env.GOOGLE_GEMINI_MODEL || "gemini-1.5-flash";
+        const key = process.env.GOOGLE_GEMINI_API_KEY!;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+
+        // Concatenate system + user for a simple MVP prompt to Gemini
+        const combined = `${systemPrompt}\n\nUser: ${args.prompt}`;
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: combined }] }],
+            generationConfig: { temperature: 0.7, topP: 0.9, maxOutputTokens: 300 },
+          }),
+        });
+        if (!resp.ok) {
+          throw new Error(`Google Gemini API error: ${resp.status} ${resp.statusText}`);
+        }
+        const data: any = await resp.json();
+        const text =
+          data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+          data?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text).join("\n") ||
+          "";
+        return { text, model };
+      };
+
+      // Try configured provider first
+      if (providerEnv === "groq" && hasGroq) {
+        const { text, model } = await callGroq();
+        aiResponse = text || "";
+        usedModel = model;
+        usedProvider = "groq";
+      } else if (providerEnv === "google" && hasGoogle) {
+        const { text, model } = await callGoogle();
+        aiResponse = text || "";
+        usedModel = model;
+        usedProvider = "google";
+      } else if (hasGroq) {
+        // Auto-detect: prefer Groq if key present
+        const { text, model } = await callGroq();
+        aiResponse = text || "";
+        usedModel = model;
+        usedProvider = "groq";
+      } else if (hasGoogle) {
+        const { text, model } = await callGoogle();
+        aiResponse = text || "";
+        usedModel = model;
+        usedProvider = "google";
+      } else {
+        // Fallback to local Ollama as before
+        const fullPrompt = `${systemPrompt}\n\nUser: ${args.prompt}`;
+        const response = await fetch("http://localhost:11434/api/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+          body: JSON.stringify({
+            model: "phi3:mini",
+            prompt: fullPrompt,
+            stream: false,
+            options: {
+              temperature: 0.7,
+              top_p: 0.9,
+              max_tokens: 200,
+            },
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        aiResponse = data.response;
+        usedModel = "phi3:mini";
+        usedProvider = "ollama";
       }
-
-      const data = await response.json();
-      let aiResponse = data.response;
 
       // Append task creation confirmation if task was created
       if (taskCreationResult.created) {
@@ -90,7 +180,7 @@ Respond in a supportive, understanding tone while being direct about accountabil
           checkinId: args.checkinId,
           prompt: args.prompt,
           response: aiResponse,
-          model: "phi3:mini",
+          model: `${usedProvider}:${usedModel}`,
           responseTime,
         });
       }
