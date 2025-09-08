@@ -213,7 +213,8 @@ export default function Settings() {
         // Add: persist LLM provider & API key (testing)
         llmProvider,
         llmApiKey,
-        llmModel: llmModel || aiModel,
+        // Use only the explicit model input; do not fall back to preset
+        llmModel,
       };
       localStorage.setItem("singleUserSettings", JSON.stringify(data));
       toast.success("Settings saved!");
@@ -669,7 +670,7 @@ export default function Settings() {
                         ? "e.g., gemini-1.5-flash"
                         : "e.g., phi3:mini"
                     }
-                    value={llmModel || aiModel}
+                    value={llmModel}
                     onChange={(e) => setLlmModel(e.target.value)}
                     className="bg-black/40 border-gray-700"
                   />
@@ -700,21 +701,7 @@ export default function Settings() {
               )}
 
               {/* Existing AI preferences */}
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="aiModelSelect">AI Model Preset</Label>
-                  <Select value={aiModel} onValueChange={setAiModel}>
-                    <SelectTrigger className="bg-black/40 border-gray-700">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="phi3">Phi-3 (Default)</SelectItem>
-                      <SelectItem value="gpt4">GPT-4 (Premium)</SelectItem>
-                      <SelectItem value="claude">Claude (Premium)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
+              <div className="grid md:grid-cols-1 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="personality">AI Personality</Label>
                   <Select value={aiPersonality} onValueChange={setAiPersonality}>
