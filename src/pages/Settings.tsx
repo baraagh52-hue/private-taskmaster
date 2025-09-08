@@ -50,7 +50,12 @@ export default function Settings() {
   // AI Settings
   const [aiModel, setAiModel] = useState("phi3");
   const [aiPersonality, setAiPersonality] = useState("supportive");
-  
+
+  // Add: LLM provider & API key (for testing)
+  const [llmProvider, setLlmProvider] = useState<"groq" | "google" | "ollama">("ollama");
+  const [llmApiKey, setLlmApiKey] = useState("");
+  const [llmModel, setLlmModel] = useState("");
+
   // Voice Settings
   const [preferredVoice, setPreferredVoice] = useState("");
   const [speechRate, setSpeechRate] = useState(1);
@@ -97,6 +102,11 @@ export default function Settings() {
       setMicrosoftClientId(s.microsoftClientId ?? "");
       setMicrosoftClientSecret(s.microsoftClientSecret ?? "");
       setMicrosoftTenantId(s.microsoftTenantId ?? "");
+
+      // Load LLM provider, model, and API key (testing)
+      setLlmProvider(s.llmProvider ?? "ollama");
+      setLlmApiKey(s.llmApiKey ?? "");
+      setLlmModel(s.llmModel ?? "");
     } catch {}
   }, []);
 
@@ -199,6 +209,11 @@ export default function Settings() {
         microsoftClientId,
         microsoftClientSecret,
         microsoftTenantId,
+
+        // Add: persist LLM provider & API key (testing)
+        llmProvider,
+        llmApiKey,
+        llmModel: llmModel || aiModel,
       };
       localStorage.setItem("singleUserSettings", JSON.stringify(data));
       toast.success("Settings saved!");
@@ -627,9 +642,67 @@ export default function Settings() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Provider + Model */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="aiModel">AI Model</Label>
+                  <Label htmlFor="llmProvider">LLM Provider</Label>
+                  <Select value={llmProvider} onValueChange={(v) => setLlmProvider(v as any)}>
+                    <SelectTrigger className="bg-black/40 border-gray-700">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ollama">Local (Ollama)</SelectItem>
+                      <SelectItem value="groq">Groq (OpenAI-compatible)</SelectItem>
+                      <SelectItem value="google">Google Gemini</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="aiModel">LLM Model</Label>
+                  <Input
+                    id="aiModel"
+                    placeholder={
+                      llmProvider === "groq"
+                        ? "e.g., llama-3.3-70b-versatile"
+                        : llmProvider === "google"
+                        ? "e.g., gemini-1.5-flash"
+                        : "e.g., phi3:mini"
+                    }
+                    value={llmModel || aiModel}
+                    onChange={(e) => setLlmModel(e.target.value)}
+                    className="bg-black/40 border-gray-700"
+                  />
+                </div>
+              </div>
+
+              {/* API Key (testing only) */}
+              {llmProvider !== "ollama" && (
+                <div className="space-y-2">
+                  <Label htmlFor="llmApiKey">
+                    {llmProvider === "groq" ? "Groq API Key" : "Google Gemini API Key"} (temporary testing)
+                  </Label>
+                  <Input
+                    id="llmApiKey"
+                    type="password"
+                    placeholder={
+                      llmProvider === "groq" ? "gsk_..." : "AI... (Google API key)"
+                    }
+                    value={llmApiKey}
+                    onChange={(e) => setLlmApiKey(e.target.value)}
+                    className="bg-black/40 border-gray-700"
+                  />
+                  <p className="text-xs text-gray-400">
+                    For testing only: Key is saved locally and sent to the server for this single-user setup.
+                    For production, set provider keys in environment variables instead.
+                  </p>
+                </div>
+              )}
+
+              {/* Existing AI preferences */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="aiModelSelect">AI Model Preset</Label>
                   <Select value={aiModel} onValueChange={setAiModel}>
                     <SelectTrigger className="bg-black/40 border-gray-700">
                       <SelectValue />
@@ -641,7 +714,7 @@ export default function Settings() {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="personality">AI Personality</Label>
                   <Select value={aiPersonality} onValueChange={setAiPersonality}>

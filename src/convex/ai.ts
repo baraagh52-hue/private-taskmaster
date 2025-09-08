@@ -11,6 +11,10 @@ export const chatWithPhi3 = action({
     sessionId: v.optional(v.id("sessions")),
     checkinId: v.optional(v.id("checkins")),
     context: v.optional(v.string()),
+    // Add: optional overrides for provider/model/apiKey (testing)
+    provider: v.optional(v.union(v.literal("groq"), v.literal("google"), v.literal("ollama"))),
+    model: v.optional(v.string()),
+    apiKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const startTime = Date.now();
@@ -49,23 +53,29 @@ Respond in a supportive, understanding tone while being direct about accountabil
         { role: "user", content: args.prompt },
       ];
 
-      // Provider selection: prefer explicit LLM_PROVIDER, else detect by available keys
-      const providerEnv = (process.env.LLM_PROVIDER || "").toLowerCase();
-      const hasGroq = !!process.env.GROQ_API_KEY;
-      const hasGoogle = !!process.env.GOOGLE_GEMINI_API_KEY;
+      // Provider selection with optional overrides
+      let providerEnv = (process.env.LLM_PROVIDER || "").toLowerCase();
+      if (args.provider) providerEnv = args.provider;
+
+      // Keys (allow override for testing)
+      const hasGroqEnv = !!process.env.GROQ_API_KEY;
+      const hasGoogleEnv = !!process.env.GOOGLE_GEMINI_API_KEY;
+      const groqKey = args.provider === "groq" && args.apiKey ? args.apiKey : process.env.GROQ_API_KEY;
+      const googleKey = args.provider === "google" && args.apiKey ? args.apiKey : process.env.GOOGLE_GEMINI_API_KEY;
 
       let aiResponse = "";
-      let usedModel = "phi3:mini";
+      let usedModel = args.model || "phi3:mini";
       let usedProvider = "ollama";
 
-      // Helper: call Groq (OpenAI-compatible)
-      const callGroq = async (): Promise<{ text: string; model: string }> => {
-        const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+      // Helper: call Groq with optional model/key overrides
+      const callGroq = async (modelOverride?: string, keyOverride?: string): Promise<{ text: string; model: string }> => {
+        const model = modelOverride || process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+        const key = keyOverride || process.env.GROQ_API_KEY!;
         const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+            "Authorization": `Bearer ${key}`,
           },
           body: JSON.stringify({
             model,
@@ -83,13 +93,12 @@ Respond in a supportive, understanding tone while being direct about accountabil
         return { text, model };
       };
 
-      // Helper: call Google Gemini
-      const callGoogle = async (): Promise<{ text: string; model: string }> => {
-        const model = process.env.GOOGLE_GEMINI_MODEL || "gemini-1.5-flash";
-        const key = process.env.GOOGLE_GEMINI_API_KEY!;
+      // Helper: call Google Gemini with optional model/key overrides
+      const callGoogle = async (modelOverride?: string, keyOverride?: string): Promise<{ text: string; model: string }> => {
+        const model = modelOverride || process.env.GOOGLE_GEMINI_MODEL || "gemini-1.5-flash";
+        const key = keyOverride || process.env.GOOGLE_GEMINI_API_KEY!;
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
 
-        // Concatenate system + user for a simple MVP prompt to Gemini
         const combined = `${systemPrompt}\n\nUser: ${args.prompt}`;
         const resp = await fetch(url, {
           method: "POST",
@@ -110,30 +119,29 @@ Respond in a supportive, understanding tone while being direct about accountabil
         return { text, model };
       };
 
-      // Try configured provider first
-      if (providerEnv === "groq" && hasGroq) {
-        const { text, model } = await callGroq();
+      // Try configured or overridden provider first
+      if (providerEnv === "groq" && groqKey) {
+        const { text, model } = await callGroq(args.model, groqKey);
         aiResponse = text || "";
         usedModel = model;
         usedProvider = "groq";
-      } else if (providerEnv === "google" && hasGoogle) {
-        const { text, model } = await callGoogle();
+      } else if (providerEnv === "google" && googleKey) {
+        const { text, model } = await callGoogle(args.model, googleKey);
         aiResponse = text || "";
         usedModel = model;
         usedProvider = "google";
-      } else if (hasGroq) {
-        // Auto-detect: prefer Groq if key present
-        const { text, model } = await callGroq();
+      } else if (groqKey) {
+        const { text, model } = await callGroq(args.model, groqKey);
         aiResponse = text || "";
         usedModel = model;
         usedProvider = "groq";
-      } else if (hasGoogle) {
-        const { text, model } = await callGoogle();
+      } else if (googleKey) {
+        const { text, model } = await callGoogle(args.model, googleKey);
         aiResponse = text || "";
         usedModel = model;
         usedProvider = "google";
       } else {
-        // Fallback to local Ollama as before
+        // Fallback to local Ollama
         const fullPrompt = `${systemPrompt}\n\nUser: ${args.prompt}`;
         const response = await fetch("http://localhost:11434/api/generate", {
           method: "POST",
@@ -141,7 +149,7 @@ Respond in a supportive, understanding tone while being direct about accountabil
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "phi3:mini",
+            model: args.model || "phi3:mini",
             prompt: fullPrompt,
             stream: false,
             options: {
@@ -156,7 +164,7 @@ Respond in a supportive, understanding tone while being direct about accountabil
         }
         const data = await response.json();
         aiResponse = data.response;
-        usedModel = "phi3:mini";
+        usedModel = args.model || "phi3:mini";
         usedProvider = "ollama";
       }
 
