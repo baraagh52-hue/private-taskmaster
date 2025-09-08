@@ -1,38 +1,17 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# AI Accountability Assistant - Ubuntu Uninstaller
+APP_CMD_NAME="ai-accountability-assistant"
+INSTALL_DIR="$HOME/.local/share/$APP_CMD_NAME"
+BIN_DIR="$HOME/.local/bin"
+DESKTOP_DIR="$HOME/.local/share/applications"
+LAUNCHER_PATH="$BIN_DIR/$APP_CMD_NAME"
+DESKTOP_ENTRY_PATH="$DESKTOP_DIR/$APP_CMD_NAME.desktop"
 
-APP_NAME="AI Accountability Assistant"
-APP_DIR="$HOME/.local/share/ai-accountability-assistant"
-DESKTOP_FILE="$HOME/.local/share/applications/ai-accountability-assistant.desktop"
-BIN_FILE="$HOME/.local/bin/ai-accountability-assistant"
+echo "==> Uninstalling $APP_CMD_NAME"
 
-echo "🗑️ Uninstalling $APP_NAME..."
+rm -f "$LAUNCHER_PATH" || true
+rm -f "$DESKTOP_ENTRY_PATH" || true
+rm -rf "$INSTALL_DIR" || true
 
-# Stop any running instances
-pkill -f "ai-accountability-assistant" || true
-
-# Remove application directory
-if [ -d "$APP_DIR" ]; then
-    echo "📁 Removing application directory..."
-    rm -rf "$APP_DIR"
-fi
-
-# Remove desktop entry
-if [ -f "$DESKTOP_FILE" ]; then
-    echo "🖥️ Removing desktop entry..."
-    rm "$DESKTOP_FILE"
-fi
-
-# Remove launcher script
-if [ -f "$BIN_FILE" ]; then
-    echo "🚀 Removing launcher script..."
-    rm "$BIN_FILE"
-fi
-
-# Update desktop database
-if command -v update-desktop-database &> /dev/null; then
-    update-desktop-database "$HOME/.local/share/applications"
-fi
-
-echo "✅ $APP_NAME has been uninstalled successfully!"
+echo "==> Uninstall complete."

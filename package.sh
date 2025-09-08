@@ -1,84 +1,42 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Package the application for distribution
+# Read version from package.json
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js is required to run this packager."
+  exit 1
+fi
 
-APP_NAME="ai-accountability-assistant"
-VERSION="1.0.0"
-PACKAGE_DIR="dist-package"
+VERSION=$(node -e "console.log(require('./package.json').version || '0.0.0')")
+PKG_NAME="ai-accountability-assistant-${VERSION}-ubuntu"
+OUT_FILE="${PKG_NAME}.tar.gz"
 
-echo "📦 Packaging $APP_NAME v$VERSION..."
+echo "==> Creating package ${OUT_FILE}"
 
-# Clean previous package
-rm -rf "$PACKAGE_DIR"
-mkdir -p "$PACKAGE_DIR"
+TMP_DIR="$(mktemp -d)"
+PKG_DIR="$TMP_DIR/$PKG_NAME"
+mkdir -p "$PKG_DIR"
 
-# Copy necessary files
-echo "📋 Copying files..."
-cp -r src "$PACKAGE_DIR/"
-cp -r public "$PACKAGE_DIR/"
-cp package.json "$PACKAGE_DIR/"
-cp pnpm-lock.yaml "$PACKAGE_DIR/"
-cp vite.config.ts "$PACKAGE_DIR/"
-cp tsconfig*.json "$PACKAGE_DIR/"
-cp components.json "$PACKAGE_DIR/"
-cp index.html "$PACKAGE_DIR/"
-cp .env.local "$PACKAGE_DIR/" 2>/dev/null || echo "No .env.local found"
-cp convex.json "$PACKAGE_DIR/"
-cp install.sh "$PACKAGE_DIR/"
-cp uninstall.sh "$PACKAGE_DIR/"
+# Copy files excluding heavy/artifact dirs
+rsync -a \
+  --exclude node_modules \
+  --exclude .git \
+  --exclude dist \
+  --exclude .turbo \
+  --exclude .next \
+  ./ "$PKG_DIR/"
 
-# Make install scripts executable
-chmod +x "$PACKAGE_DIR/install.sh"
-chmod +x "$PACKAGE_DIR/uninstall.sh"
-
-# Create README for the package
-cat > "$PACKAGE_DIR/INSTALL.md" << 'EOF'
-# AI Accountability Assistant - Installation Guide
-
-## Quick Install (Ubuntu/Debian)
-
-1. Extract the package
-2. Open terminal in the extracted folder
-3. Run: `./install.sh`
-4. Launch from Applications menu or run: `ai-accountability-assistant`
-
-## Manual Installation
-
-If the automatic installer doesn't work:
-
-1. Install Node.js 20+: `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs`
-2. Install pnpm: `npm install -g pnpm`
-3. Install dependencies: `pnpm install`
-4. Build: `pnpm build`
-5. Run: `pnpm preview`
-
-## Features
-
-- ✅ Single-user mode (no sign-in required)
-- 🕌 Automatic prayer time calculation based on location
-- 🎤 Voice commands with hotword activation ("assistant")
-- 📝 Task management and accountability tracking
-- 🔄 Microsoft To-Do integration (optional)
-- 💾 Local data storage
-
-## Usage
-
-1. Go to Settings to configure your location for prayer times
-2. Say "assistant" followed by your command for voice input
-3. All data is stored locally on your machine
-
-## Uninstall
-
-Run: `./uninstall.sh`
-EOF
+# Ensure installer scripts are executable
+chmod +x "$PKG_DIR/install.sh" "$PKG_DIR/uninstall.sh" || true
 
 # Create archive
-echo "🗜️ Creating archive..."
-tar -czf "${APP_NAME}-${VERSION}-ubuntu.tar.gz" -C "$PACKAGE_DIR" .
+tar -C "$TMP_DIR" -czf "$OUT_FILE" "$PKG_NAME"
 
-echo "✅ Package created: ${APP_NAME}-${VERSION}-ubuntu.tar.gz"
-echo ""
-echo "📋 Installation instructions:"
-echo "1. Extract: tar -xzf ${APP_NAME}-${VERSION}-ubuntu.tar.gz"
-echo "2. Install: cd ${APP_NAME}-${VERSION} && ./install.sh"
-echo "3. Launch: ai-accountability-assistant"
+# Cleanup temp dir
+rm -rf "$TMP_DIR"
+
+echo "==> Package created: $OUT_FILE"
+echo "Install steps:"
+echo "  tar -xzf $OUT_FILE"
+echo "  cd $PKG_NAME"
+echo "  ./install.sh"
