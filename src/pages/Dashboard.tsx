@@ -137,7 +137,27 @@ export default function Dashboard() {
   const [plannedDuration, setPlannedDuration] = useState(60);
   const [showNewSession, setShowNewSession] = useState(false);
   const [checkinInput, setCheckinInput] = useState("");
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
+
+  // Detect speech recognition support (type-safe, no TS directives)
+  const sttSupported =
+    typeof window !== "undefined" &&
+    Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+  // Init voiceEnabled based on STT availability (was true by default)
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(false);
+
+  // Ensure initial state follows actual capability, and notify once if unavailable
+  useEffect(() => {
+    if (sttSupported) {
+      setVoiceEnabled(true);
+    } else {
+      setVoiceEnabled(false);
+      toast("Speech-to-Text is not available on this browser/OS", {
+        description:
+          "Use the manual input for check-ins, or try Chrome/Chromium. Some Linux builds lack the Web Speech API.",
+      });
+    }
+  }, [sttSupported]);
 
   // Voice interaction
   const { isListening, isSpeaking, startListening, stopListening, speak, stopSpeaking } = useVoiceInteraction();
@@ -344,6 +364,16 @@ export default function Dashboard() {
   const handleQuickCheckin = async () => {
     if (!currentSession) return;
 
+    // Add: guard for STT capability and guide user
+    if (voiceEnabled && !sttSupported) {
+      setVoiceEnabled(false);
+      toast("Voice check-in unavailable", {
+        description: "Your browser doesn't support speech recognition. Use manual input instead.",
+      });
+      setCheckinInput("How are you feeling about your progress?");
+      return;
+    }
+
     const prompts = [
       "How are you feeling about your progress?",
       "What's your current focus level from 1-10?",
@@ -469,6 +499,7 @@ export default function Dashboard() {
               size="sm"
               onClick={() => setVoiceEnabled(!voiceEnabled)}
               className={voiceEnabled ? "border-[#00ff88] text-[#00ff88]" : "border-gray-600"}
+              disabled={!sttSupported}
             >
               {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </Button>
@@ -931,6 +962,13 @@ export default function Dashboard() {
           </motion.div>
         )}
       </div>
+
+      {/* Add: STT capability banner */}
+      {!sttSupported && (
+        <div className="mb-6 p-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 text-sm text-yellow-300">
+          Speech-to-Text is unavailable on this browser/OS. Use manual check-ins or try Chrome/Chromium.
+        </div>
+      )}
     </div>
   );
 }
