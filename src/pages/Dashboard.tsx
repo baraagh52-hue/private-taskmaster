@@ -151,10 +151,9 @@ export default function Dashboard() {
     if (sttSupported) {
       setVoiceEnabled(true);
     } else {
-      setVoiceEnabled(false);
-      toast("Speech-to-Text is not available on this browser/OS", {
-        description:
-          "Use the manual input for check-ins, or try Chrome/Chromium. Some Linux builds lack the Web Speech API.",
+      setVoiceEnabled(true);
+      toast("Voice input will use server-side STT", {
+        description: "Click Record Voice or use Quick Check-in.",
       });
     }
   }, [sttSupported]);
@@ -181,6 +180,54 @@ export default function Dashboard() {
   const recordPrayerCheckin = useMutation(api.prayers.recordPrayerCheckin);
   const chatWithAI = useAction(api.ai.chatWithPhi3);
   const speechToText = useAction(api.voice.speechToText);
+
+  // Add: server-side TTS (Coqui) with browser fallback and playback state
+  const textToSpeechAction = useAction(api.voice.textToSpeech);
+  const [isTtsPlaying, setIsTtsPlaying] = useState(false);
+
+  const playAudioUrl = (url: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const audio = new Audio(url);
+        audio.onended = () => resolve();
+        audio.onerror = () => reject(new Error("Failed to play audio"));
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.then === "function") {
+          playPromise.catch(reject);
+        }
+      } catch (e) {
+        reject(e as any);
+      }
+    });
+  };
+
+  const serverSpeak = async (text: string) => {
+    try {
+      setIsTtsPlaying(true);
+      const res: any = await textToSpeechAction({ text });
+      if (res?.success) {
+        const url =
+          typeof res.audioUrl === "string" && res.audioUrl.length > 0
+            ? res.audioUrl
+            : res?.audioData
+            ? `data:audio/wav;base64,${res.audioData}`
+            : null;
+
+        if (url) {
+          await playAudioUrl(url);
+          return;
+        }
+      }
+      // Fallback to browser TTS
+      speak(text);
+    } catch (err) {
+      console.error(err);
+      toast.error("TTS failed. Falling back to browser voice.");
+      speak(text);
+    } finally {
+      setIsTtsPlaying(false);
+    }
+  };
 
   // Timer for current session
   const [sessionTime, setSessionTime] = useState(0);
@@ -446,16 +493,6 @@ export default function Dashboard() {
   const handleQuickCheckin = async () => {
     if (!currentSession) return;
 
-    // Add: guard for STT capability and guide user
-    if (voiceEnabled && !sttSupported) {
-      setVoiceEnabled(false);
-      toast("Voice check-in unavailable", {
-        description: "Your browser doesn't support speech recognition. Use manual input instead.",
-      });
-      setCheckinInput("How are you feeling about your progress?");
-      return;
-    }
-
     const prompts = [
       "How are you feeling about your progress?",
       "What's your current focus level from 1-10?",
@@ -465,14 +502,17 @@ export default function Dashboard() {
     ];
 
     const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
-    
+
     if (voiceEnabled) {
-      speak(randomPrompt);
-      setTimeout(() => {
-        startListening(async (transcript) => {
-          await handleCheckinResponse(transcript, randomPrompt);
-        });
-      }, 2000);
+      try {
+        // Speak via server TTS first, then start recording your reply
+        await serverSpeak(randomPrompt);
+        await startServerRecording();
+      } catch (e) {
+        console.error(e);
+        toast.error("Unable to start voice flow. Using manual input.");
+        setCheckinInput(randomPrompt);
+      }
     } else {
       setCheckinInput(randomPrompt);
     }
@@ -581,7 +621,6 @@ export default function Dashboard() {
               size="sm"
               onClick={() => setVoiceEnabled(!voiceEnabled)}
               className={voiceEnabled ? "border-[#00ff88] text-[#00ff88]" : "border-gray-600"}
-              disabled={!sttSupported}
             >
               {voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </Button>
@@ -745,7 +784,7 @@ export default function Dashboard() {
                     <Button
                       onClick={handleQuickCheckin}
                       className="bg-[#ff0080] hover:bg-[#ff0080]/90 text-white"
-                      disabled={isListening || isSpeaking}
+                      disabled={isListening || isSpeaking || isTtsPlaying || isRecording}
                     >
                       {isListening ? (
                         <>

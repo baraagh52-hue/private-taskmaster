@@ -230,15 +230,6 @@ export const speechToText = action({
         throw new Error("User not authenticated");
       }
 
-      const openaiKey = process.env.OPENAI_API_KEY;
-      if (!openaiKey) {
-        return {
-          success: false,
-          error:
-            "Server STT unavailable: OPENAI_API_KEY not set. Set it to enable Whisper transcription.",
-        };
-      }
-
       // Convert base64 string to a Blob for multipart upload
       const buffer = Buffer.from(args.audioData, "base64");
       const mime = args.mimeType || "audio/webm";
@@ -251,11 +242,71 @@ export const speechToText = action({
           ? "mp3"
           : "webm";
       const filename = `audio.${fileExt}`;
-
       const blob = new Blob([buffer], { type: mime });
 
+      // 1) Prefer local STT server if configured (fully self-hosted)
+      // Expected API contract:
+      // - POST ${STT_LOCAL_URL} with multipart form-data:
+      //    - file: audio file
+      //    - language (optional)
+      // - Response JSON containing one of:
+      //    { text: string } or { transcript: string } or { result: { text: string } }
+      const localSttUrl = process.env.STT_LOCAL_URL;
+      if (localSttUrl) {
+        try {
+          const localForm = new FormData();
+          if (args.language) localForm.append("language", args.language);
+          localForm.append("file", blob, filename);
+
+          const localResp = await fetch(localSttUrl, {
+            method: "POST",
+            body: localForm,
+          });
+
+          if (!localResp.ok) {
+            const errText = await localResp.text().catch(() => "");
+            throw new Error(
+              `Local STT error: ${localResp.status} ${localResp.statusText} ${errText}`.trim(),
+            );
+          }
+
+          const localData: any = await localResp.json().catch(() => ({}));
+          const transcript: string =
+            localData?.text ||
+            localData?.transcript ||
+            localData?.result?.text ||
+            "";
+
+          if (!transcript) {
+            return {
+              success: false,
+              error: "Local STT returned empty text",
+            };
+          }
+
+          return {
+            success: true,
+            transcript,
+            confidence: localData?.confidence ?? 1.0,
+            provider: "local_stt",
+          };
+        } catch (e) {
+          // If local STT fails, fall through to OpenAI (if configured) or return an error below
+          console.warn("Local STT failed, attempting OpenAI fallback if configured:", e);
+        }
+      }
+
+      // 2) Fallback to OpenAI Whisper if configured
+      const openaiKey = process.env.OPENAI_API_KEY;
+      if (!openaiKey) {
+        return {
+          success: false,
+          error:
+            "Server STT unavailable: Set STT_LOCAL_URL to your local STT server OR OPENAI_API_KEY for Whisper.",
+        };
+      }
+
       const form = new FormData();
-      // OpenAI Whisper model
       form.append("model", "whisper-1");
       form.append("response_format", "json");
       if (args.language) form.append("language", args.language);
