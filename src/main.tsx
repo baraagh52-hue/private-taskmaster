@@ -7,6 +7,7 @@ import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { StrictMode, useEffect, useState, Component } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import { toast } from "sonner";
 import "./index.css";
 import Landing from "./pages/Landing.tsx";
 import NotFound from "./pages/NotFound.tsx";
@@ -49,6 +50,33 @@ class RootErrorBoundary extends Component<
     }
     return this.props.children;
   }
+}
+
+function GlobalErrorListener() {
+  useEffect(() => {
+    const onError = (e: ErrorEvent) => {
+      try {
+        const msg = e?.message || "Unexpected runtime error";
+        toast.error(`Runtime error: ${msg}`);
+      } catch {}
+    };
+    const onUnhandledRejection = (e: PromiseRejectionEvent) => {
+      try {
+        const reason = e?.reason;
+        const msg =
+          (reason && (reason.message || String(reason))) ||
+          "Unhandled promise rejection";
+      toast.error(msg);
+      } catch {}
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
+  }, []);
+  return null;
 }
 
 const memoryStorage = (() => {
@@ -163,6 +191,7 @@ function RootProviders() {
       <ConvexProvider client={convex}>
         {/* Use in-memory storage to avoid localStorage in restricted environments */}
         <AppRouter />
+        <GlobalErrorListener />
         <Toaster />
       </ConvexProvider>
     </InstrumentationProvider>
