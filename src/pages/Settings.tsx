@@ -55,6 +55,8 @@ export default function Settings() {
   const [llmProvider, setLlmProvider] = useState<"groq" | "google" | "ollama">("ollama");
   const [llmApiKey, setLlmApiKey] = useState("");
   const [llmModel, setLlmModel] = useState("");
+  // Convex backend URL override for single-user mode
+  const [convexUrl, setConvexUrl] = useState("");
 
   // Voice Settings
   const [preferredVoice, setPreferredVoice] = useState("");
@@ -107,6 +109,9 @@ export default function Settings() {
       setLlmProvider(s.llmProvider ?? "ollama");
       setLlmApiKey(s.llmApiKey ?? "");
       setLlmModel(s.llmModel ?? "");
+
+      // Add Convex URL (backend) setting for overriding Convex client URL
+      setConvexUrl(s.convexUrl ?? "");
     } catch {}
   }, []);
 
@@ -215,8 +220,12 @@ export default function Settings() {
         llmApiKey,
         // Use only the explicit model input; do not fall back to preset
         llmModel,
+
+        // Add Convex URL to saved data
+        convexUrl,
       };
       localStorage.setItem("singleUserSettings", JSON.stringify(data));
+      localStorage.setItem("convexUrl", convexUrl || "");
       toast.success("Settings saved!");
     } catch (error) {
       toast.error("Failed to save settings locally");
@@ -716,6 +725,39 @@ export default function Settings() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Backend (Convex) section UI */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <Card className="bg-black/40 border-gray-800">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center">
+                <Globe className="w-5 h-5 mr-2 text-[#00ff88]" />
+                Backend (Convex)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-gray-400 text-sm">
+                Enter your Convex deployment URL. This overrides the environment variable and removes the yellow warning banner.
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="convexUrl">Convex URL</Label>
+                <Input
+                  id="convexUrl"
+                  placeholder="https://your-deployment.convex.cloud or http://127.0.0.1:8187"
+                  value={convexUrl}
+                  onChange={(e) => setConvexUrl(e.target.value)}
+                  className="bg-black/40 border-gray-700"
+                />
+                <p className="text-xs text-gray-500">
+                  Example: http://127.0.0.1:8187 (local dev) or https://xxx.convex.cloud (production)
+                </p>
               </div>
             </CardContent>
           </Card>

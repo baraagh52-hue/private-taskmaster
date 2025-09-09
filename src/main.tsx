@@ -90,16 +90,29 @@ ensureStoragePolyfill();
 
 // Use env when available; otherwise fall back to local Convex dev URL so the client can initialize.
 const convexUrl = (import.meta as any).env?.VITE_CONVEX_URL as string | undefined;
-const resolvedConvexUrl = convexUrl && typeof convexUrl === "string" && convexUrl.length > 0
-  ? convexUrl
-  : "http://127.0.0.1:8187";
+// Add: allow overriding Convex URL via localStorage (no rebuild required)
+const storedConvexUrl = (() => {
+  try {
+    return (window as any).localStorage?.getItem?.("convexUrl") || undefined;
+  } catch {
+    return undefined;
+  }
+})();
+
+const resolvedConvexUrl =
+  convexUrl && typeof convexUrl === "string" && convexUrl.length > 0
+    ? convexUrl
+    : storedConvexUrl && storedConvexUrl.length > 0
+    ? storedConvexUrl
+    : "http://127.0.0.1:8187";
 const convex = new ConvexReactClient(resolvedConvexUrl);
 
 function ConvexWarningBanner() {
-  if (convexUrl) return null;
+  // Hide banner if either env var or localStorage override is present
+  if (convexUrl || storedConvexUrl) return null;
   return (
     <div className="w-full bg-yellow-500/10 text-yellow-200 border border-yellow-500/30 px-4 py-2 text-sm">
-      Convex URL missing. Set VITE_CONVEX_URL or run Convex dev. Some features may not work.
+      Convex URL missing. Set VITE_CONVEX_URL or enter a Convex URL in Settings. Some features may not work.
     </div>
   );
 }
