@@ -31,7 +31,7 @@ import {
   Check,
   X
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { toast } from "sonner";
@@ -180,10 +180,92 @@ export default function Dashboard() {
   const createCheckin = useMutation(api.checkins.createCheckin);
   const recordPrayerCheckin = useMutation(api.prayers.recordPrayerCheckin);
   const chatWithAI = useAction(api.ai.chatWithPhi3);
+  const speechToText = useAction(api.voice.speechToText);
 
   // Timer for current session
   const [sessionTime, setSessionTime] = useState(0);
   const [lastCheckinTime, setLastCheckinTime] = useState(0);
+
+  // Server-side STT recording state (MediaRecorder -> upload to Convex -> Whisper)
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const mimeTypeRef = useRef<string>("");
+
+  const blobToBase64 = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const res = reader.result as string;
+        const base64 = res.split(",")[1] || "";
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+
+  const startServerRecording = async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        toast.error("Microphone not supported in this environment");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const supportedTypes = [
+        "audio/webm;codecs=opus",
+        "audio/ogg;codecs=opus",
+        "audio/webm",
+      ];
+      const mime =
+        supportedTypes.find((t) => (window as any).MediaRecorder?.isTypeSupported?.(t)) || "";
+
+      chunksRef.current = [];
+      mimeTypeRef.current = mime || "audio/webm";
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+
+      rec.ondataavailable = (e: BlobEvent) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      rec.onstop = async () => {
+        try {
+          const blob = new Blob(chunksRef.current, { type: mimeTypeRef.current || "audio/webm" });
+          const base64 = await blobToBase64(blob);
+          const stt = await speechToText({ audioData: base64, mimeType: mimeTypeRef.current });
+
+          if (stt?.success && stt.transcript) {
+            await handleCheckinResponse(stt.transcript, "Voice check-in");
+            toast.success("Transcribed successfully");
+          } else {
+            toast.error(stt?.error || "Transcription failed");
+          }
+        } catch (err) {
+          console.error(err);
+          toast.error("Failed to transcribe audio");
+        } finally {
+          stream.getTracks().forEach((t) => t.stop());
+          setIsRecording(false);
+        }
+      };
+
+      mediaRecorderRef.current = rec;
+      rec.start();
+      setIsRecording(true);
+      toast("Recording… speak now");
+    } catch (e) {
+      console.error(e);
+      toast.error("Mic access denied or unavailable");
+    }
+  };
+
+  const stopServerRecording = () => {
+    try {
+      mediaRecorderRef.current?.stop();
+    } catch {
+      // no-op
+    }
+  };
 
   // Add next prayer countdown state
   const [nextPrayer, setNextPrayer] = useState<{ name: string; time: string; targetTs: number; isTomorrow: boolean } | null>(null);
@@ -677,7 +759,27 @@ export default function Dashboard() {
                         </>
                       )}
                     </Button>
-                    
+
+                    {/* New: Server-side STT for Firefox/Linux (OpenAI Whisper) */}
+                    <Button
+                      variant="outline"
+                      onClick={isRecording ? stopServerRecording : startServerRecording}
+                      className={isRecording ? "border-[#ff0080] text-[#ff0080]" : "border-[#ff0080] text-[#ff0080]"}
+                      disabled={isSpeaking}
+                    >
+                      {isRecording ? (
+                        <>
+                          <Square className="w-4 h-4 mr-2" />
+                          Stop Recording
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-4 h-4 mr-2" />
+                          Record Voice
+                        </>
+                      )}
+                    </Button>
+
                     <Button
                       variant="outline"
                       onClick={handleEndSession}

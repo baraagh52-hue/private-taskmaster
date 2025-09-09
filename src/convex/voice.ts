@@ -218,8 +218,10 @@ export const checkCoquiStatus = action({
 // Speech-to-Text processing
 export const speechToText = action({
   args: {
-    audioData: v.string(), // base64 encoded audio
+    audioData: v.string(), // base64 encoded audio (no data URL prefix)
     language: v.optional(v.string()),
+    // Add: optional MIME type hint, e.g. "audio/webm" | "audio/wav" | "audio/ogg"
+    mimeType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     try {
@@ -228,12 +230,66 @@ export const speechToText = action({
         throw new Error("User not authenticated");
       }
 
-      // For now, we'll use browser's built-in Speech Recognition API
-      // This is handled on the frontend for better real-time performance
+      const openaiKey = process.env.OPENAI_API_KEY;
+      if (!openaiKey) {
+        return {
+          success: false,
+          error:
+            "Server STT unavailable: OPENAI_API_KEY not set. Set it to enable Whisper transcription.",
+        };
+      }
+
+      // Convert base64 string to a Blob for multipart upload
+      const buffer = Buffer.from(args.audioData, "base64");
+      const mime = args.mimeType || "audio/webm";
+      const fileExt =
+        mime === "audio/wav"
+          ? "wav"
+          : mime === "audio/ogg"
+          ? "ogg"
+          : mime === "audio/mpeg"
+          ? "mp3"
+          : "webm";
+      const filename = `audio.${fileExt}`;
+
+      const blob = new Blob([buffer], { type: mime });
+
+      const form = new FormData();
+      // OpenAI Whisper model
+      form.append("model", "whisper-1");
+      form.append("response_format", "json");
+      if (args.language) form.append("language", args.language);
+      form.append("file", blob, filename);
+
+      const resp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openaiKey}`,
+        },
+        body: form,
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => "");
+        throw new Error(
+          `OpenAI STT error: ${resp.status} ${resp.statusText} ${errText}`.trim(),
+        );
+      }
+
+      const data: any = await resp.json();
+      const transcript: string = data?.text || "";
+      if (!transcript) {
+        return {
+          success: false,
+          error: "Transcription returned empty text",
+        };
+      }
+
       return {
         success: true,
-        transcript: "", // Will be processed on frontend
-        confidence: 1.0,
+        transcript,
+        confidence: 1.0, // Whisper API doesn't provide explicit confidence
+        provider: "openai_whisper",
       };
     } catch (error) {
       console.error("STT error:", error);
